@@ -4,14 +4,19 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -33,16 +38,25 @@ type JoeTestHarness struct {
 	tmpDir       string
 	testPort     string
 	cleanupFuncs []func()
+
+	// Responder is the scripted LLM joe is pointed at. It runs DefaultScript
+	// until a test calls Responder.SetScript.
+	Responder *Responder
 }
 
 // NewTestHarness creates a new test harness
 func NewTestHarness(t *testing.T) *JoeTestHarness {
 	tmpDir := t.TempDir()
-	// Use unique port for each test to avoid conflicts
-	testPort := "7778"
+	// An OS-assigned port per joe instance, so tests do not collide with each
+	// other or with a joe the developer has running.
+	testPort := freePort(t)
+	responder, err := NewResponder(t)
+	if err != nil {
+		t.Fatalf("failed to start the scripted responder: %v", err)
+	}
 	// Setup test config
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	setupTestConfig(t, configPath, testPort)
+	setupTestConfig(t, configPath, testPort, responder.BaseURL(), tmpDir)
 	return &JoeTestHarness{
 		t:          t,
 		apiURL:     fmt.Sprintf("http://localhost:%s", testPort),
@@ -50,7 +64,40 @@ func NewTestHarness(t *testing.T) *JoeTestHarness {
 		configPath: configPath,
 		tmpDir:     tmpDir,
 		testPort:   testPort,
+		Responder:  responder,
 	}
+}
+
+// freePort asks the OS for a free loopback port and releases it for joe to
+// bind. The window between release and joe's bind is a race in principle;
+// nothing else in the suite asks for ports, so it does not lose in practice.
+func freePort(t *testing.T) string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to find a free port: %v", err)
+	}
+	defer ln.Close()
+	return strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+}
+
+// joeEnv is the environment joe runs under: the test process's own, with every
+// JOE_ variable removed so a developer's shell cannot override the harness's
+// config (JOE_LLM_PROVIDER and JOE_LLM_MODEL apply after the file is read), and
+// with HOME in the test's temp dir so nothing joe defaults under ~/.joe is
+// shared between tests or with the developer's own joe.
+func (h *JoeTestHarness) joeEnv() []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "JOE_") || strings.HasPrefix(kv, "HOME=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env,
+		fmt.Sprintf("HOME=%s", h.tmpDir),
+		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
+		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
+	)
 }
 
 // Start builds and starts joe
@@ -72,16 +119,10 @@ func (h *JoeTestHarness) Start() error {
 	}
 	joeCorePath := filepath.Join(repoRoot, "joe")
 	h.joeCore = exec.Command(joeCorePath)
-	h.joeCore.Env = append(os.Environ(),
-		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
-		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
-		"JOE_LOG_LEVEL=debug",
-		// Dummy LLM key: must clear gemini's minAPIKeyLength (20) placeholder
-		// check so joe boots. The e2e tests drive their own client-side
-		// mock LLM and never make a real Gemini call, so the value only needs
-		// to pass the format check — it is never used to authenticate.
-		"GEMINI_API_KEY=e2e-dummy-key-not-a-real-credential",
-	)
+	// No LLM key of any kind: the config points joe's openai-compat provider
+	// at the harness's scripted responder, and that provider sends no
+	// Authorization header without one.
+	h.joeCore.Env = append(h.joeEnv(), "JOE_LOG_LEVEL=debug")
 	h.joeCore.Stdout = logFile
 	h.joeCore.Stderr = logFile
 	if err := h.joeCore.Start(); err != nil {
@@ -112,6 +153,13 @@ func (h *JoeTestHarness) Stop() {
 			h.t.Log(string(content))
 		}
 	}
+	if h.Responder != nil {
+		h.Responder.Close()
+		for _, c := range h.Responder.Rejections() {
+			h.t.Errorf("scripted responder rejected a request joe sent: %s", c.Rejected)
+		}
+		h.Responder = nil
+	}
 	for _, cleanup := range h.cleanupFuncs {
 		cleanup()
 	}
@@ -140,15 +188,69 @@ func (h *JoeTestHarness) GetStatus() (map[string]interface{}, error) {
 	return result, nil
 }
 
+// TaskResponse is the part of POST /api/v1/tasks's response the e2e tests
+// assert on. It is decoded independently of internal/api, so a change to the
+// wire shape breaks a test rather than following silently.
+type TaskResponse struct {
+	TaskID      string   `json:"task_id"`
+	SessionID   string   `json:"session_id"`
+	Status      string   `json:"status"`
+	Iterations  int      `json:"iterations"`
+	FinalAnswer string   `json:"final_answer"`
+	ToolsUsed   []string `json:"tools_used"`
+	Error       string   `json:"error"`
+	TotalTokens struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"total_tokens"`
+	Steps []struct {
+		ToolResults []struct {
+			Name  string `json:"name"`
+			Error string `json:"error"`
+		} `json:"tool_results"`
+	} `json:"steps"`
+}
+
+// RunTask posts one message to POST /api/v1/tasks and decodes the turn.
+func (h *JoeTestHarness) RunTask(message string) (*TaskResponse, error) {
+	payload, err := json.Marshal(map[string]string{"message": message})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, fmt.Sprintf("%s/api/v1/tasks", h.apiURL), bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+e2eServiceAccountKey)
+	req.Header.Set("Content-Type", "application/json")
+	// A turn makes several LLM round trips and a tool call, so it gets more
+	// time than a status probe.
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status=%d, body=%s", resp.StatusCode, body)
+	}
+	var out TaskResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", body, err)
+	}
+	return &out, nil
+}
+
 // RunCommand runs the joe CLI and returns output
 func (h *JoeTestHarness) RunCommand(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "./joe", args...)
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("JOE_CONFIG=%s", h.configPath),
-		fmt.Sprintf("JOE_SERVER_ADDRESS=localhost:%s", h.testPort),
-	)
+	cmd.Env = h.joeEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -187,32 +289,50 @@ func (h *JoeTestHarness) waitForAPI(timeout time.Duration) error {
 	}
 }
 
-// buildBinaries builds the joe binary
+// buildOnce builds joe once per test process. Every test runs the same
+// binary, and `make build` runs `npm ci` and the UI build, so rebuilding per
+// test cost ~25s each and bought nothing.
+var (
+	buildOnce sync.Once
+	buildErr  error
+)
+
+// buildBinaries builds the joe binary, once per test process
 func (h *JoeTestHarness) buildBinaries() error {
-	h.t.Log("Building binaries...")
-	// Find repository root (go up two directories from test/e2e)
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		return fmt.Errorf("failed to find repo root: %w", err)
-	}
-	cmd := exec.Command("make", "build")
-	cmd.Dir = repoRoot
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("build failed: %s", output)
-	}
-	h.t.Log("Build complete")
-	return nil
+	buildOnce.Do(func() {
+		h.t.Log("Building binaries...")
+		// Find repository root (go up two directories from test/e2e)
+		repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+		if err != nil {
+			buildErr = fmt.Errorf("failed to find repo root: %w", err)
+			return
+		}
+		cmd := exec.Command("make", "build")
+		cmd.Dir = repoRoot
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			buildErr = fmt.Errorf("build failed: %s", output)
+			return
+		}
+		h.t.Log("Build complete")
+	})
+	return buildErr
 }
 
-// setupTestConfig creates a test configuration file
-func setupTestConfig(t *testing.T, path, port string) {
+// setupTestConfig creates a test configuration file. Setting llm.current
+// skips auto-selection, which never picks openai-compat; base_url is the only
+// way to point that provider anywhere, since no env var carries it.
+func setupTestConfig(t *testing.T, path, port, llmBaseURL, dataDir string) {
 	config := fmt.Sprintf(`llm:
-  current: gemini-flash
+  current: e2e-responder
   available:
-    gemini-flash:
-      provider: gemini
-      model: gemini-2.0-flash
+    e2e-responder:
+      provider: openai-compat
+      model: e2e-responder
+      base_url: %s
+database:
+  driver: sqlite
+  dsn: %s
 server:
   address: localhost:%s
   service_accounts:
@@ -222,7 +342,7 @@ logging:
   level: debug
 refresh:
   interval_minutes: 60
-`, port)
+`, llmBaseURL, filepath.Join(dataDir, "joe.db"), port)
 	if err := os.WriteFile(path, []byte(config), 0644); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}

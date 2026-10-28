@@ -19,7 +19,9 @@ The gate is path-filtered on pull requests, keyed to the class scopes below by t
 
 The gate carries a **budget of 6 minutes**, with no exception path. Measured on pull request #23, a `go`-only diff: **3m28s** end to end, with Unit Tests at 191s the critical path and everything else hidden behind it. Anything new entering the gate fits inside that budget or displaces something already there.
 
-**The exception path is gone.** GoReleaser Snapshot Build used to re-enter the gate whenever the diff touched `.goreleaser.yaml`, `cmd/`, `ui/`, `Makefile`, `go.mod`/`go.sum` or `.github/workflows/`, taking the budget to 11 minutes — measured at **538s** on pull request #47, the single largest cost in the gate and pulled in by a diff to the gate's own workflow file. End-to-End Tests, at **139s**, left with it. Both are now pinned post-merge unconditionally: the gate asks whether `main` is broken, using checks that are fast and deterministic, and a packaging build and a suite that spawns real binaries against placeholder keys are neither.
+**The exception path is gone.** GoReleaser Snapshot Build used to re-enter the gate whenever the diff touched `.goreleaser.yaml`, `cmd/`, `ui/`, `Makefile`, `go.mod`/`go.sum` or `.github/workflows/`, taking the budget to 11 minutes — measured at **538s** on pull request #47, the single largest cost in the gate and pulled in by a diff to the gate's own workflow file. End-to-End Tests, at **139s**, left with it. GoReleaser stays pinned post-merge unconditionally: the gate asks whether `main` is broken, using checks that are fast and deterministic, and a packaging build is neither.
+
+**End-to-End Tests re-entered the gate on 2026-10-28, conditionally: when the diff touches `test/e2e/`.** A feature ships with a deterministic end-to-end test (joe-pm `decisions/0018-features-ship-with-deterministic-e2e.md`), so a feature pull request carries one and pays for running it; a docs or refactor pull request does not, and the job stays post-merge and nightly for those. What made the suite fit for the gate is that it no longer runs against placeholder keys: the harness points joe at a scripted responder in the test process, with no LLM, no key and no network. Measured on the pull request that made the change: E2E_MEASUREMENT.
 
 Filtering errs broad by rule: each pattern is wider than the class it stands for. The nightly unfiltered run is the complement, so that a misclassified diff which skipped the job that would have caught it surfaces within a day rather than at the next release.
 
@@ -63,11 +65,27 @@ Class names are stable identifiers; other tooling references them by name.
 
 **Verify.** `make vet-tagged` (`Makefile:131-133`); `make test-integration` (`Makefile:71`); `make test-e2e` (`Makefile:75`, which depends on `make build`).
 
-**CI.** **Gate** for two, **post-merge** for the third. `make test-integration` and `make vet-tagged` run under the `go` filter (`.github/workflows/tests.yml:154`, `:245`). `make test-e2e` **left the gate**: the `e2e` output is pinned `false` on pull requests unconditionally, so the job runs only on pushes to `main`, the nightly unfiltered matrix, and manual dispatch. It boots `cmd/joe`, runs `npm ci` and spawns real binaries, which is not what a fast deterministic gate is made of, and at 139s it was buying a check that its own Gaps field records as not exercising the provider paths its name implies.
+**CI.** **Gate** for `make test-integration` and `make vet-tagged`, which run under the `go` filter. `make test-e2e` is **gate when the diff touches `test/e2e/`**, and **post-merge** otherwise: the `classify` job sets the `e2e` output from a `^test/e2e/` match on pull requests, and every push to `main`, the nightly unfiltered matrix and manual dispatch run it regardless. A `test/e2e/` diff is a `.go` diff, so the `go` filter's jobs run beside it.
 
 **Evidence.** The per-suite pass line for each command run.
 
-**Gaps.** A bare `go test ./...` or `go vet ./...` never compiles either tree, so default commands passing says nothing about these files — the comment at `Makefile:126-130` records this as a real incident, citing D-0118. `make vet-tagged` was the check standing behind that incident with no machine running it; `gated-main` folded it into the `lint` job, and it is now gate-tier. `test/e2e/` is a single test file plus its harness, with no matrix. CI e2e runs against placeholder keys falling back to the literal `test-key` (`.github/workflows/tests.yml:164-165`), so real-provider paths are unexercised. `make test-e2e` is heavy tier: its presence is cited above, but it was not executed when this map was written — it depends on `make build`, which runs `npm ci` (network) and spawns real binaries.
+**Gaps.** A bare `go test ./...` or `go vet ./...` never compiles either tree, so default commands passing says nothing about these files — the comment at `Makefile:126-130` records this as a real incident, citing D-0118. `make vet-tagged` was the check standing behind that incident with no machine running it; `gated-main` folded it into the `lint` job, and it is now gate-tier. `test/e2e/` runs joe against a scripted responder owned by the harness (`test/e2e/responder.go`) through joe's `openai-compat` provider, configured by file alone, so **no model and no real provider is exercised** — that is the design, not a shortfall: what the suite asserts is joe's plumbing from the API to the outcome, and what a model would say is the business of `docs/behaviour-claims.md`. The claude and gemini provider paths have no end-to-end coverage. A change to the wire shape of joe's no-tool-call probe or of the openai-compat request shows up as a responder rejection, which fails the test that triggered it. `make test-e2e` depends on `make build`, which runs `npm ci` (network) — the only network the suite needs.
+
+### `feature-e2e`
+
+**Scope.** A diff that **adds** an HTTP route, a migration, or a UI page, decided from the diff:
+
+- an HTTP route — an added line calling `HandleFunc(` or `Handle(` in a non-test `.go` file under `internal/` or `cmd/`, whose text the same diff does not also remove (every route in the tree is a `mux.HandleFunc` registration; moving one is not adding one);
+- a migration — an added file under `internal/store/migrations/`;
+- a UI page — an added non-test `.tsx` file under `ui/src/pages/`, or an added `<Route` line in a non-test `.tsx` file under `ui/src/` (today `ui/src/App.tsx` alone).
+
+**Verify.** `make test-e2e`, with a test under `test/e2e/` that exercises the added surface over joe's public API behind the harness's scripted responder.
+
+**CI.** **Gate**, by composition — the test is in the diff, so `test/e2e/` is touched and the `e2e` output is true. The `classify` job **refuses** a diff that matches this Scope and carries no `test/e2e/` path: it fails, naming this class and joe-pm decision 0018, and `Test Summary` fails with it.
+
+**Evidence.** The per-test pass line from `make test-e2e`, with the command as run.
+
+**Gaps.** "Feature" is not decidable from a diff, so this Scope is a floor, not the rule: behaviour behind an existing route adds no route and is the work order's to name (joe-pm decision 0018, term 2). The refusal checks that **a** `test/e2e/` path is in the diff, not that it exercises the added surface; that is the order's and the report's to show. GitHub omits the patch of a file too large to diff, and such a file is not inspected for added routes — the job warns and names it. When the slice ships a UI surface, the deterministic spec in joe-oasis-e2e's `ui-suite/` is owed in addition, and this map does not reach that repository.
 
 ### `frontend`
 
