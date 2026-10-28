@@ -924,3 +924,47 @@ func TestEncryptionKeyPath_ParsesFromYAML(t *testing.T) {
 		t.Errorf("EncryptionKeyPath = %q, want /var/lib/joe/encryption.key", cfg.Database.EncryptionKeyPath)
 	}
 }
+
+// TestAutoRunDefaults pins the Auto Joe run budget defaults and the rule that
+// a run is always budgeted: a zero or negative field falls back, never to "no
+// ceiling".
+func TestAutoRunDefaults(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if cfg.AutoRun.TokenCeiling != defaultAutoRunTokenCeiling {
+		t.Errorf("token_ceiling = %d, want %d", cfg.AutoRun.TokenCeiling, defaultAutoRunTokenCeiling)
+	}
+	if cfg.AutoRun.WallClock != time.Duration(defaultAutoRunWallClockMinutes)*time.Minute {
+		t.Errorf("wall clock = %v, want %d minutes", cfg.AutoRun.WallClock, defaultAutoRunWallClockMinutes)
+	}
+	if cfg.AutoRun.ReportReserveTokens != defaultAutoRunReportReserveTokens {
+		t.Errorf("report_reserve_tokens = %d, want %d", cfg.AutoRun.ReportReserveTokens, defaultAutoRunReportReserveTokens)
+	}
+	if cfg.AutoRun.ReportReserve != time.Duration(defaultAutoRunReportReserveSeconds)*time.Second {
+		t.Errorf("report reserve = %v", cfg.AutoRun.ReportReserve)
+	}
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+auto_run:
+  token_ceiling: 250000
+  wall_clock_minutes: 7
+  report_reserve_tokens: -1
+  report_reserve_seconds: 0
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(configPath)
+	if err != nil {
+		t.Fatalf("Load(file) returned error: %v", err)
+	}
+	if cfg.AutoRun.TokenCeiling != 250000 || cfg.AutoRun.WallClock != 7*time.Minute {
+		t.Errorf("file values not applied: %+v", cfg.AutoRun)
+	}
+	if cfg.AutoRun.ReportReserveTokens != defaultAutoRunReportReserveTokens || cfg.AutoRun.ReportReserve != time.Duration(defaultAutoRunReportReserveSeconds)*time.Second {
+		t.Errorf("non-positive reserves must fall back to the defaults: %+v", cfg.AutoRun)
+	}
+}
