@@ -47,6 +47,13 @@ import type {
   SkillsListResponseSchema,
   SkillsReloadResponseSchema,
   SkillsApprovalResponseSchema,
+  RunFindingSchema,
+  RunFindingSetSchema,
+  RunFindingsResponseSchema,
+  RunFindingProposalSchema,
+  RunFindingTypeSchema,
+  RunFindingBandSchema,
+  RunFindingLabelSchema,
 } from './schemas';
 
 // Types derived from Zod schemas — single source of truth
@@ -97,3 +104,10 @@ export type SkillStatusEntry = z.infer<typeof SkillStatusEntrySchema>;
 export type SkillsListResponse = z.infer<typeof SkillsListResponseSchema>;
 export type SkillsReloadResponse = z.infer<typeof SkillsReloadResponseSchema>;
 export type SkillsApprovalResponse = z.infer<typeof SkillsApprovalResponseSchema>;
+export type RunFinding = z.infer<typeof RunFindingSchema>;
+export type RunFindingSet = z.infer<typeof RunFindingSetSchema>;
+export type RunFindingsResponse = z.infer<typeof RunFindingsResponseSchema>;
+export type RunFindingProposal = z.infer<typeof RunFindingProposalSchema>;
+export type RunFindingType = z.infer<typeof RunFindingTypeSchema>;
+export type RunFindingBand = z.infer<typeof RunFindingBandSchema>;
+export type RunFindingLabel = z.infer<typeof RunFindingLabelSchema>;

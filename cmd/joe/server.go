@@ -40,6 +40,7 @@ import (
 	"github.com/jaimegago/joe/internal/promotereads"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/readposture"
+	"github.com/jaimegago/joe/internal/runfindings"
 	"github.com/jaimegago/joe/internal/runmodel"
 	"github.com/jaimegago/joe/internal/safety"
 	"github.com/jaimegago/joe/internal/search"
@@ -373,6 +374,10 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// Phase 1 Change 3 — see the Phase 1 decomposition plan.
 	findingsRepo := findings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 	warningsRepo := warnings.NewRepository(sqlStore.DB(), sqlStore.Driver())
+	// Wire the run-findings repository (tables created by migration 034): the
+	// typed record a read-only Auto Joe run produces, distinct from the human
+	// findings annotation above (autojoe-ro-report-build).
+	runFindingsRepo := runfindings.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
 	// Wire captain state-machine service (Phase 1 Change 6).
 	// Reachability threshold of 90s matches the CaptainService default;
@@ -555,6 +560,7 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.RunModel = runModelRepo
 	services.Findings = findingsRepo
 	services.Warnings = warningsRepo
+	services.RunFindings = runFindingsRepo
 	services.CaptainSvc = captainSvc
 	// Web search is a global, boot-only capability (not a component): resolve
 	// the configured SearchProvider once here from cfg.WebSearch and seal it

@@ -147,6 +147,10 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// re-homed under /api/v1/sessions below.
 	s.registerFindingsRoutes(mux, apiPrefix)
 	s.registerWarningsRoutes(mux, apiPrefix)
+	// The typed finding records a read-only Auto Joe run produces, read by the
+	// findings view (autojoe-ro-report-build). Distinct from the human findings
+	// annotation registered above.
+	s.registerRunFindingsRoutes(mux, apiPrefix)
 	s.registerRegimeRoutes(mux, apiPrefix)
 	// Phase 1 Change 6: captain attach + transfer state machine.
 	s.registerCaptainRoutes(mux, apiPrefix)
