@@ -55,6 +55,22 @@ folding the full re-analysis into the post-launch milestone and evolution pass.
 Launch priority is public reference docs over narrative, and this is a narrative
 document. Resolve this before scheduling the redo.
 
+### Questions the redo must answer
+
+Raised in the maintainer's notes (joe-pm notes entries `pp5kx.01`, `pp5kx.02`,
+`pr2uh.07`, the last also standing for `pp5kx.03`). The rebuilt
+failure-mode-to-mechanism mapping should answer each one, and a question it
+cannot answer with a shipped mechanism is a gap to file, not a line to soften:
+
+- **How is Joe controlled?** The mechanisms, in order, that bound what Joe can
+  do on a registered system.
+- **What bounds the blast radius?** Per the stale-claim lead above, blast radius
+  is distributed rather than a tier (D-0020); the redo states where it lives.
+- **What protects against an operator's misconfiguration?** An operator grants
+  Joe write access to a zone it should not have, or read-write on a production
+  database. This is the Kiro failure mode most directly, and the answer may be
+  that nothing in Joe can catch it — which the case study should then say.
+
 ---
 
 ## Preserved stale snapshot — OLD case study as it stood at deletion

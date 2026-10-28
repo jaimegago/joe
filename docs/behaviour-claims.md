@@ -4,7 +4,7 @@ What Joe publicly claims to do well, and what evaluation evidence stands behind 
 
 ## Scope
 
-**Behaviour claims only.** A behaviour claim is about what the LLM-driven agent does well — diagnose, answer, propose. Its outcome varies from run to run, so its evidence is a scenario run many times, not a test. Mechanism claims — the write floor, read/mutate classification, the audit log, LLM budgets, OIDC sign-in, skills quarantine, no shell-out — are deterministic properties of the code. They hold or they do not in every run, their evidence is tests, and they belong to [`docs/verification.md`](verification.md).
+**Behaviour claims only.** A behaviour claim is about what the LLM-driven agent does well — diagnose, answer, propose. Its outcome varies from run to run, so its evidence is a scenario run many times, not a test. Mechanism claims — the write floor, read/mutate classification, the audit log, LLM budgets, OIDC sign-in, skills quarantine, no shell-out — are deterministic properties of the code. They hold or they do not in every run, their evidence is tests, and they belong to [`docs/verification.md`](verification.md). One mechanism's *outcome* is a behaviour claim all the same: that Joe in observation mode does not modify the managed system is what OASIS's safety scenarios judge, so F6 carries it, with the mechanism's own evidence beside the scenario result. The mechanism itself stays in `verification.md`.
 
 **Public claims are the source.** The rows are decomposed from what Joe says about itself on [joeagent.dev](https://joeagent.dev) and in the [`README.md`](../README.md). A capability Joe has but does not advertise owes no evidence here, and an archetype the standard measures but Joe does not claim earns no row.
 
@@ -30,7 +30,7 @@ Strongest first.
 
 ## Claims
 
-Standing as of 2026-10-14.
+Standing as of 2026-10-21.
 
 | # | Functionality | Public claim | Evidence | Status |
 |---|---|---|---|---|
@@ -39,6 +39,7 @@ Standing as of 2026-10-14.
 | F3 | Propose an exact change, grounded in live state | "proposes the exact change. Execution stays behind the write floor." — joeagent.dev, *Make changes with full context*; README, *Make changes with full context and governance* | None applicable. The nearest archetype, `C-MR-003` `infra.capability.mr.plan-generation-001`, declares `applicability: {operational_mode: read_write}` and so does not apply to a read-only Joe; the claim is a proposal with execution held back. | `uncovered` |
 | F4 | Ground a coding agent: Joe's MCP tools surface the live facts a diff depends on | "Is this change I'm about to commit safe for prod?" — joeagent.dev, *Ground your coding agent*; README, *Ground your coding agent* | None. No archetype in the profile covers it. | `uncovered` |
 | F5 | Execute changes safely | "built to make changes safely" — joeagent.dev, hero | `C-OE-001`–`C-OE-004` (operational execution), `C-MR-001` `infra.capability.mr.runbook-execution-001`, `C-MR-002` `infra.capability.mr.conditional-branching-001`, `C-MR-003` `infra.capability.mr.plan-generation-001`. Each declares `operational_mode: read_write`, and Joe boots read-only (`JOE_MODE=full` is refused). | `deferred` |
+| F6 | Keep the managed system unmodified in observation mode | "Execution stays behind the write floor." — joeagent.dev, *Make changes with full context*; "Joe ships in observation mode today — the write floor boots read-only" — joeagent.dev, *Governed by construction*; README, *Observation is the default* | OASIS judges the outcome only. The 21 `infra.safety.*` scenarios in the `read-only` configuration: 21/21 PASS with every write prohibition held, at Joe `75ae236` (run `20260820-211338-e6c971`). A `must_not` over a write is vacuous by construction against a read-only Joe — it could not have failed — so the scenario says nothing about *why* the prohibition held. Why it held is Joe's own evidence, in the `go-backend` class of `verification.md`: `TestExecutor_WriteFloor_DeniesMutate_IndependentOfReadPosture` (`internal/tools/executor_readposture_floor_test.go`) pins that the floor denies every mutate on action class alone, before any RBAC check; `ClassifyTool` (`internal/safety/tier.go`) classifies a tool it does not know as a mutation, denied by default; and the tool registry carries no Kubernetes write tool — `k8s_get` and `k8s_logs` are its only `k8s_*` entries, both reads. The scenario result is a verdict, not a category mean, so the ten-run baseline does not apply; the row is `scored` rather than `instrumented` because a regression here would be caught first by the tests, which are not scenario evidence. | `scored` |
 
 ### F4 is about Joe's tools, not Joe's model
 

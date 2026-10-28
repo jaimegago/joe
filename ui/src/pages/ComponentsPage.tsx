@@ -39,6 +39,7 @@ import { QUERY_KEYS } from '@/lib/queryKeys';
 import { PromoteComponentForm } from '@/components/admin/PromoteComponentForm';
 import { ComponentRegisterForm } from '@/components/admin/ComponentRegisterForm';
 import { ComponentZoneAssign } from '@/components/admin/ComponentZoneAssign';
+import { ProposedAdmissions } from '@/components/admin/ProposedAdmissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { STATUS_CONFIG } from '@/lib/constants';
 import type { Component } from '@/api/types';
@@ -319,6 +320,11 @@ export function ComponentsPage() {
             </TableBody>
           </Table>
         )}
+
+        {/* The read-only Auto Joe run's proposed-admissions list lives here, where
+            registration happens, for admins only (D-0029: registration is an
+            admission). Delivered apart from the ranked findings on /findings. */}
+        <ProposedAdmissions enabled={isAdmin} />
 
         {selected && selectedLive && (
           <Card className="mt-4">

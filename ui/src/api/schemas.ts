@@ -651,3 +651,93 @@ export const SkillsApprovalResponseSchema = z.object({
   commit: z.string().optional(),
   skills: z.array(z.string()),
 });
+
+// Run findings — the typed record a read-only Auto Joe run produces
+// (GET /api/v1/run-findings, internal/runfindings). Not the human
+// cross-session `findings` annotation. The band is computed server-side from
+// (type, consequence, reach, weight) through a fixed table; the UI renders it
+// and never derives it.
+export const RunFindingTypeSchema = z.enum(['issue', 'risk', 'graph_update']);
+export const RunFindingBandSchema = z.enum(['P0', 'P1', 'P2', 'P3']);
+export const RunFindingLabelSchema = z.enum(['new', 'standing', 'resolved', 'unknown']);
+
+export const RunFindingProposalSchema = z.object({
+  shape: z.enum(['repository_change', 'live_object_change', 'operator_action']),
+  target: z.object({
+    node_id: z.string(),
+    component_id: z.string(),
+    system_id: z.string(),
+  }),
+  base: z.string(),
+  change: z.string(),
+  expected_effect: z.string(),
+  limits: z.string(),
+  // status is always "unverified" (D-0140); carried so the UI labels it from
+  // the record rather than from a hardcoded string.
+  status: z.string(),
+  executable: z.boolean(),
+  paths: z.array(z.string()).optional(),
+  live_object: z
+    .object({
+      group: z.string().optional(),
+      version: z.string(),
+      resource: z.string(),
+      namespace: z.string().optional(),
+      name: z.string(),
+    })
+    .optional(),
+});
+
+export const RunFindingDerivationSchema = z.object({
+  consequence: z.string(),
+  evidence_line: z.string(),
+  reach: z.object({
+    dependents: z.array(z.string()).nullable().optional(),
+    components: z.array(z.string()).nullable().optional(),
+    count: z.number(),
+  }),
+  weight: z.number(),
+  base_band: z.string(),
+  band: z.string(),
+  movement: z.string(),
+});
+
+export const RunFindingSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  run_id: z.string(),
+  scope_key: z.string(),
+  session_id: z.string(),
+  type: RunFindingTypeSchema,
+  reference: z.string(),
+  subject_node_id: z.string(),
+  subject_component_id: z.string(),
+  claim: z.string(),
+  condition: z.string().optional(),
+  rationale: z.string().optional(),
+  consequence: z.string().optional(),
+  band: RunFindingBandSchema,
+  reach_count: z.number(),
+  weight: z.number(),
+  derivation: RunFindingDerivationSchema,
+  proposal: RunFindingProposalSchema.optional(),
+  label: RunFindingLabelSchema,
+  evidence_session_id: z.string(),
+  evidence_message_id: z.string().optional(),
+  established_at: z.string(),
+  created_at: z.string(),
+});
+
+export const RunFindingSetSchema = z.object({
+  run_id: z.string(),
+  scope_key: z.string(),
+  session_id: z.string(),
+  created_at: z.string(),
+  finding_count: z.number(),
+});
+
+export const RunFindingsResponseSchema = z.object({
+  runs: z.array(RunFindingSetSchema),
+  findings: z.array(RunFindingSchema),
+  count: z.number(),
+});

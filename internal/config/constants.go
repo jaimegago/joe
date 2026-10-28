@@ -20,6 +20,16 @@ const (
 	defaultBatchThreshold         = 10
 	defaultBatchTimeoutSec        = 30
 
+	// Default Auto Joe run budget (joe-pm queue/autojoe-ro-run.md § Budget): a
+	// token ceiling and a wall-clock ceiling per run, set from these deployment
+	// defaults when a trigger fires or a schedule is installed, plus the report
+	// reserve held OUTSIDE the ceilings so a run that hits either can still say
+	// so. A schedule's cost is runs times ceiling, and the operator set both.
+	defaultAutoRunTokenCeiling         = 1_000_000
+	defaultAutoRunWallClockMinutes     = 20
+	defaultAutoRunReportReserveTokens  = 50_000
+	defaultAutoRunReportReserveSeconds = 120
+
 	// Provider names.
 	providerClaude       = "claude"
 	providerGemini       = "gemini"
