@@ -86,6 +86,12 @@ func setupAutoRunServer(t *testing.T, llmAdapter llm.LLMAdapter) (*Server, *http
 	return srv, mux, svc, sqlStore
 }
 
+// waitAutoRun waits for a run to be delivered: its record out of running AND,
+// when it has a session, its final turn written. The service writes the record
+// before the findings pipeline and the turn (autorun.Service.execute), so a
+// record that reads completed is not yet a delivered run; a caller that read
+// the session on the record alone raced the turn and, under -cover's slower
+// scheduling, lost (Post-Merge run 40721760377, "messages: 200 / 0").
 func waitAutoRun(t *testing.T, mux *http.ServeMux, id string) map[string]any {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -97,12 +103,24 @@ func waitAutoRun(t *testing.T, mux *http.ServeMux, id string) map[string]any {
 		var run map[string]any
 		_ = json.NewDecoder(w.Body).Decode(&run)
 		if run["state"] != "running" {
-			return run
+			sessionID, _ := run["session_id"].(string)
+			if sessionID == "" || autoRunTurnWritten(mux, sessionID) {
+				return run
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("run %s still live after 5s", id)
+	t.Fatalf("run %s not delivered after 5s", id)
 	return nil
+}
+
+func autoRunTurnWritten(mux *http.ServeMux, sessionID string) bool {
+	w := doRequest(mux, "GET", "/api/v1/sessions/"+sessionID+"/messages", nil)
+	var msgs struct {
+		Count int `json:"count"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&msgs)
+	return w.Code == http.StatusOK && msgs.Count > 0
 }
 
 func TestAutoRun_RoutesAbsentUntilInstalled(t *testing.T) {

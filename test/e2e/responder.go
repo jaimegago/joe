@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -74,6 +76,31 @@ func (r ChatRequest) LastMessage() ChatMessage {
 func (r ChatRequest) IsToolIntentProbe() bool {
 	last := r.LastMessage()
 	return last.Role == "user" && last.Text() == prompts.UnfulfilledToolIntentProbe
+}
+
+// SystemText returns the concatenated content of the request's system
+// messages.
+func (r ChatRequest) SystemText() string {
+	var b strings.Builder
+	for _, m := range r.Messages {
+		if m.Role == "system" {
+			b.WriteString(m.Text())
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+// IsAutoRunPassOver reports whether this request belongs to an Auto Joe run
+// whose resolved scope is exactly components. It is keyed on the scope
+// section joe writes into a run's system prompt (prompts.AutoRunScopeSection,
+// over the sorted set the run resolved), so a script can tell concurrent runs
+// apart by the scope a test chose, and follows the section if its wording
+// changes.
+func (r ChatRequest) IsAutoRunPassOver(components ...string) bool {
+	sorted := append([]string(nil), components...)
+	sort.Strings(sorted)
+	return strings.Contains(r.SystemText(), prompts.AutoRunScopeSection(sorted))
 }
 
 // HasToolResult reports whether the conversation already carries a tool
