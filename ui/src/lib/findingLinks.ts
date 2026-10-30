@@ -12,3 +12,10 @@ export function graphNodeHref(nodeId: string): string {
 export function evidenceHref(sessionId: string): string {
   return `/chat/${encodeURIComponent(sessionId)}`;
 }
+
+// autoJoeRunHref links a run pointer — the Findings page's per-scope run
+// section — to that run's reading on the Auto Joe page, which marks the run
+// named by ?run=.
+export function autoJoeRunHref(runId: string): string {
+  return `/auto-joe?run=${encodeURIComponent(runId)}`;
+}

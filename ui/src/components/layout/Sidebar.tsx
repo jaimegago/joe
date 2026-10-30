@@ -5,6 +5,7 @@ import {
   MessageSquare,
   MessagesSquare,
   ClipboardList,
+  Bot,
   ShieldCheck,
   Users,
   UserCog,
@@ -56,6 +57,10 @@ const operatorNav: NavItem[] = [
   // proposed-admissions list, is inline on Components where registration
   // happens, not duplicated here.
   { to: '/findings', icon: ClipboardList, label: 'Findings', end: false },
+  // Auto Joe is where the schedules and the runs behind those findings are read
+  // back (joe-pm threads/autojoe-ro-run-visibility): readable by anyone, with
+  // the install/remove/trigger affordances inline for admins, like Components.
+  { to: '/auto-joe', icon: Bot, label: 'Auto Joe', end: false },
   { to: '/components', icon: Database, label: 'Components', end: false },
 ];
 

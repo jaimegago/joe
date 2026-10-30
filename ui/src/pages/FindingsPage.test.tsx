@@ -176,8 +176,10 @@ describe('FindingsPage', () => {
     expect(within(proposal).getByText(/capacity not checked/)).toBeInTheDocument();
     expect(within(proposal).getByText(/generation 7/)).toBeInTheDocument();
 
-    // The run row links to the run's session.
+    // The run row links to the run's session, and its run pointer to that run
+    // on the Auto Joe page.
     expect(screen.getByTestId('run-row')).toHaveTextContent('4 findings');
+    expect(screen.getByTestId('run-link')).toHaveAttribute('href', '/auto-joe?run=run-1');
   });
 
   it('shows a clean latest run as clean, not as the previous run’s list', async () => {

@@ -267,13 +267,46 @@ func (h *autoRunHandler) writeTriggerError(w http.ResponseWriter, err error) {
 	}
 }
 
+// runReading is a run record as the reads serve it: the record itself, plus
+// whether the run persisted a finding set and how many findings it holds
+// (autojoe-ro-run-visibility). The Auto Joe page links a run to its findings
+// only where a set exists, and the page derives nothing — so the fact is
+// served here, from the run-findings repository, rather than inferred by the
+// page from the findings view. Absent (omitted) when no set exists, including
+// when no findings repository is wired; a clean run's set reads 0.
+type runReading struct {
+	autorun.Run
+	FindingCount *int `json:"finding_count,omitempty"`
+}
+
+func (h *autoRunHandler) reading(ctx context.Context, run autorun.Run) runReading {
+	out := runReading{Run: run}
+	if h.findings == nil {
+		return out
+	}
+	set, err := h.findings.repo.GetSet(ctx, run.ID)
+	if err != nil {
+		slog.Warn("auto run: finding set lookup failed", "run_id", run.ID, "error", err)
+		return out
+	}
+	if set != nil {
+		n := set.FindingCount
+		out.FindingCount = &n
+	}
+	return out
+}
+
 func (h *autoRunHandler) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	runs, err := h.service.ListRuns(r.Context(), 50)
 	if err != nil {
 		writeInternalError(w, err, "auto run list")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": runs, "count": len(runs)})
+	readings := make([]runReading, 0, len(runs))
+	for _, run := range runs {
+		readings = append(readings, h.reading(r.Context(), run))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": readings, "count": len(readings)})
 }
 
 func (h *autoRunHandler) handleGetRun(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +319,7 @@ func (h *autoRunHandler) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err, "auto run get")
 		return
 	}
-	writeJSON(w, http.StatusOK, run)
+	writeJSON(w, http.StatusOK, h.reading(r.Context(), *run))
 }
 
 // handleInstallSchedule installs a standing trigger over a scope. Admin-gated

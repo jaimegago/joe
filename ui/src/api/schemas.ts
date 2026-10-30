@@ -741,3 +741,70 @@ export const RunFindingsResponseSchema = z.object({
   findings: z.array(RunFindingSchema),
   count: z.number(),
 });
+
+// Auto Joe run surface — the run and schedule records the Auto Joe page
+// renders (GET /api/v1/auto/runs, /auto/runs/{id}, /auto/schedules;
+// internal/autorun). Every field here is a field the API serves and the page
+// renders the record and nothing else: it derives no health, no last-run
+// badge, no next-due (autojoe-ro-run-visibility). Fields the server omits when
+// empty (omitempty) are optional here.
+export const AutoRunSelectionSchema = z.object({
+  components: z.array(z.string()).optional(),
+  zones: z.array(z.string()).optional(),
+});
+
+export const AutoRunSchema = z.object({
+  id: z.string(),
+  // Who switched the run on — an operator principal, or "schedule:<id>" —
+  // never the principal it ran as, which is always svc:agent:core.
+  activator: z.string(),
+  principal: z.string(),
+  selection: AutoRunSelectionSchema,
+  scope_key: z.string(),
+  // The fixed component set the selection resolved to at start; the reading
+  // shows this, not the selection as typed.
+  resolved_components: z.array(z.string()).nullable(),
+  token_ceiling: z.number(),
+  wall_clock_seconds: z.number(),
+  report_reserve_tokens: z.number(),
+  state: z.string(),
+  stop_reason: z.string().optional(),
+  covered: z.array(z.string()).nullable(),
+  not_covered: z.array(z.string()).nullable(),
+  tokens_used: z.number(),
+  report_tokens: z.number(),
+  session_id: z.string().optional(),
+  error: z.string().optional(),
+  started_at: z.string(),
+  ended_at: z.string().optional(),
+  // Present iff the run persisted a finding set (0 for a clean run); the
+  // findings link renders on this served fact alone.
+  finding_count: z.number().optional(),
+});
+
+export const AutoRunListSchema = z.object({
+  runs: z.array(AutoRunSchema).nullable(),
+  count: z.number(),
+});
+
+export const AutoScheduleSchema = z.object({
+  id: z.string(),
+  selection: AutoRunSelectionSchema,
+  scope_key: z.string(),
+  interval_seconds: z.number(),
+  token_ceiling: z.number(),
+  wall_clock_seconds: z.number(),
+  report_reserve_tokens: z.number(),
+  installed_by: z.string(),
+  installed_at: z.string(),
+  next_run_at: z.string(),
+  last_run_at: z.string().optional(),
+  // "started <run id>", or "refused: ..." — a refused fire writes no run row,
+  // so this is the one place it is visible.
+  last_outcome: z.string().optional(),
+});
+
+export const AutoScheduleListSchema = z.object({
+  schedules: z.array(AutoScheduleSchema).nullable(),
+  count: z.number(),
+});

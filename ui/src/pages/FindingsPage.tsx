@@ -6,7 +6,7 @@ import { LoadingPage } from '@/components/common/LoadingSpinner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { QueryError } from '@/components/common/QueryError';
 import { FindingCard } from '@/components/findings/FindingCard';
-import { evidenceHref } from '@/lib/findingLinks';
+import { autoJoeRunHref, evidenceHref } from '@/lib/findingLinks';
 import { useRunFindings } from '@/hooks/useRunFindings';
 import type { RunFinding, RunFindingBand } from '@/api/types';
 import { ClipboardList } from 'lucide-react';
@@ -70,7 +70,14 @@ export function FindingsPage() {
               const at = new Date(r.created_at);
               return (
                 <li key={r.run_id} data-testid="run-row">
-                  Run <span className="font-mono text-xs">{r.run_id}</span>
+                  Run{' '}
+                  <Link
+                    to={autoJoeRunHref(r.run_id)}
+                    className="font-mono text-xs text-primary underline-offset-2 hover:underline"
+                    data-testid="run-link"
+                  >
+                    {r.run_id}
+                  </Link>
                   {!Number.isNaN(at.getTime()) && (
                     <> · {formatDistanceToNow(at, { addSuffix: true })}</>
                   )}{' '}

@@ -22,4 +22,6 @@ export const QUERY_KEYS = {
   readPosture: ['read-posture'] as const,
   runFindings: ['run-findings'] as const,
   proposedAdmissions: ['run-findings', 'admissions'] as const,
+  autoRuns: ['auto-runs'] as const,
+  autoSchedules: ['auto-schedules'] as const,
 } as const;
