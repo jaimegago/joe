@@ -21,6 +21,9 @@ const SessionsPage = lazy(() =>
 const FindingsPage = lazy(() =>
   import('@/pages/FindingsPage').then((m) => ({ default: m.FindingsPage }))
 );
+const AutoJoePage = lazy(() =>
+  import('@/pages/AutoJoePage').then((m) => ({ default: m.AutoJoePage }))
+);
 const UsersPage = lazy(() => import('@/pages/UsersPage').then((m) => ({ default: m.UsersPage })));
 const CredentialStatusPage = lazy(() =>
   import('@/pages/CredentialStatusPage').then((m) => ({ default: m.CredentialStatusPage }))
@@ -119,6 +122,14 @@ export function App() {
                     element={
                       <Suspense fallback={<LoadingPage />}>
                         <FindingsPage />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="auto-joe"
+                    element={
+                      <Suspense fallback={<LoadingPage />}>
+                        <AutoJoePage />
                       </Suspense>
                     }
                   />

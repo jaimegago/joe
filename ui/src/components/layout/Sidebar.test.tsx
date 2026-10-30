@@ -82,6 +82,10 @@ describe('Sidebar', () => {
     expect(screen.getByText('Chat')).toBeInTheDocument();
     expect(screen.getAllByText('Components')).toHaveLength(1);
     expect(screen.getAllByText('Sessions')).toHaveLength(1);
+    // Auto Joe is an operator entry beside Findings, never an Admin child: its
+    // reads are open to any principal and its admin affordances are inline.
+    expect(screen.getAllByText('Auto Joe')).toHaveLength(1);
+    expect(screen.getByText('Auto Joe').closest('a')?.parentElement).toBe(chatParent);
   });
 
   it('hides the Policies nav entry under the team_flat posture but keeps Zones', () => {

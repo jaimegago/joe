@@ -54,6 +54,9 @@ import type {
   RunFindingTypeSchema,
   RunFindingBandSchema,
   RunFindingLabelSchema,
+  AutoRunSchema,
+  AutoRunSelectionSchema,
+  AutoScheduleSchema,
 } from './schemas';
 
 // Types derived from Zod schemas — single source of truth
@@ -111,3 +114,7 @@ export type RunFindingProposal = z.infer<typeof RunFindingProposalSchema>;
 export type RunFindingType = z.infer<typeof RunFindingTypeSchema>;
 export type RunFindingBand = z.infer<typeof RunFindingBandSchema>;
 export type RunFindingLabel = z.infer<typeof RunFindingLabelSchema>;
+
+export type AutoRun = z.infer<typeof AutoRunSchema>;
+export type AutoRunSelection = z.infer<typeof AutoRunSelectionSchema>;
+export type AutoSchedule = z.infer<typeof AutoScheduleSchema>;

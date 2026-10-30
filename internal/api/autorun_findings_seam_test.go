@@ -206,3 +206,63 @@ func TestAutoRun_FindingsSeam_NoBlockKeepsTheRunAndRecordsNothing(t *testing.T) 
 		t.Errorf("run_finding_sets rows = %d, want 0", n)
 	}
 }
+
+// TestAutoRun_ReadsCarryFindingCountWhereASetExists pins the one field the
+// Auto Joe page needs beyond the record (autojoe-ro-run-visibility): the run
+// reads serve finding_count where the run persisted a finding set — the
+// count, 0 for a clean run — and omit it where it persisted none, so the page
+// links a run to its findings on a served fact and derives nothing.
+func TestAutoRun_ReadsCarryFindingCountWhereASetExists(t *testing.T) {
+	adapter := &findingsLLM{findingsBlock: "```" + runfindings.FindingsFence + "\n" +
+		`{"findings": [{"type": "risk", "subject_node_id": "k8s/default/svc-a", "claim": "svc-a runs a single replica", "consequence": "would_be_unavailable", "condition": "a node drain takes the only pod down", "evidence_line": "replicas: 1"}]}` +
+		"\n```"}
+	_, mux, _ := setupAutoRunServerWithFindings(t, adapter)
+
+	w := doRequest(mux, "POST", "/api/v1/auto/runs", map[string]any{"scope": map[string]any{"components": []string{"c1"}}})
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("trigger: expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	var started map[string]any
+	_ = json.NewDecoder(w.Body).Decode(&started)
+	if _, present := started["finding_count"]; present {
+		t.Errorf("the trigger's accepted record carries finding_count before any set exists: %v", started)
+	}
+	withSet, _ := started["id"].(string)
+	run := waitAutoRun(t, mux, withSet)
+	if run["state"] != "completed" || run["finding_count"] != float64(1) {
+		t.Fatalf("run with a set = %v, want completed with finding_count 1", run)
+	}
+
+	// A run whose prose carried no block persists no set: no finding_count.
+	adapter.findingsBlock = "Nothing to report."
+	w = doRequest(mux, "POST", "/api/v1/auto/runs", map[string]any{"scope": map[string]any{"components": []string{"c2"}}})
+	_ = json.NewDecoder(w.Body).Decode(&started)
+	withoutSet, _ := started["id"].(string)
+	run = waitAutoRun(t, mux, withoutSet)
+	if _, present := run["finding_count"]; run["state"] != "completed" || present {
+		t.Fatalf("run without a set = %v, want completed and no finding_count", run)
+	}
+
+	// The list serves the same per run.
+	wList := doRequest(mux, "GET", "/api/v1/auto/runs", nil)
+	var list struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	_ = json.NewDecoder(wList.Body).Decode(&list)
+	if wList.Code != http.StatusOK || len(list.Runs) != 2 {
+		t.Fatalf("list: %d %s", wList.Code, wList.Body.String())
+	}
+	for _, r := range list.Runs {
+		n, present := r["finding_count"]
+		switch r["id"] {
+		case withSet:
+			if !present || n != float64(1) {
+				t.Errorf("listed run with a set carries finding_count %v (present %v), want 1", n, present)
+			}
+		case withoutSet:
+			if present {
+				t.Errorf("listed run without a set carries finding_count %v", n)
+			}
+		}
+	}
+}
