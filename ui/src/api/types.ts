@@ -5,7 +5,9 @@ import type {
   GraphSchema,
   SubgraphSchema,
   ComponentSchema,
+  ComponentTypeDescriptorSchema,
   CreatedComponentSchema,
+  RegistrationFieldSchema,
   SecurityZoneSchema,
   ComponentZoneAssignmentSchema,
   PromotionRequirementsSchema,
@@ -66,6 +68,13 @@ export type Graph = z.infer<typeof GraphSchema>;
 export type Subgraph = z.infer<typeof SubgraphSchema>;
 export type Component = z.infer<typeof ComponentSchema>;
 export type CreatedComponent = z.infer<typeof CreatedComponentSchema>;
+export type RegistrationField = z.infer<typeof RegistrationFieldSchema>;
+export type ComponentTypeDescriptor = z.infer<typeof ComponentTypeDescriptorSchema>;
+// A registration config carries JSON scalars, each typed as its field's
+// descriptor declares (D-0168): a number for an integer, a boolean for a boolean,
+// a string otherwise. The server refuses a value of the wrong type, with no
+// coercion.
+export type RegistrationConfig = Record<string, string | number | boolean>;
 export type SecurityZone = z.infer<typeof SecurityZoneSchema>;
 export type ComponentZoneAssignment = z.infer<typeof ComponentZoneAssignmentSchema>;
 export type PromotionRequirements = z.infer<typeof PromotionRequirementsSchema>;

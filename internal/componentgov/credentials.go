@@ -70,11 +70,13 @@ var credentialBearingFields = credential.CredentialBearingFields()
 // Defaulting here keeps config a non-null encrypted JSON object behind a single
 // seam, leaving the column and its NOT NULL constraint untouched.
 //
-// A non-empty config is returned unchanged. The defaulted empty object carries
-// no fields, so it trivially passes RejectCredentialFields — the credential-less,
+// A JSON null is an absent config too and defaults the same way: before D-0168
+// it was stored verbatim as "null", which is not the empty object D-0057 meant.
+// Any other config is returned unchanged. The defaulted empty object carries no
+// fields, so it trivially passes RejectCredentialFields — the credential-less,
 // inert-on-registration posture is unchanged.
 func NormalizeRegistrationConfig(config json.RawMessage) json.RawMessage {
-	if len(config) == 0 {
+	if isAbsentConfig(config) {
 		return json.RawMessage("{}")
 	}
 	return config

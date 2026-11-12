@@ -86,19 +86,48 @@ func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// componentTypeDescriptor is one registrable type's registration contract as the
+// Register dialog renders it: the type's name and its declared non-credential
+// routing fields, each with its JSON type, the phase it is required at, its
+// default and its label (credential.RegistrationField, D-0168). It carries only
+// declared fields, and a declared field is by construction neither
+// credential-bearing nor an adapter-read secret
+// (credential.TestRegistrationContract_DeclaresNoSecret), so no secret can reach
+// the descriptor.
+type componentTypeDescriptor struct {
+	Name   string                         `json:"name"`
+	Fields []credential.RegistrationField `json:"fields"`
+}
+
 // handleListComponentTypes returns the authoritative component-type enum
-// (store.AllowedComponentTypes) as a JSON list, so the operator-facing
-// registration UI can populate its type selector from the single source of
-// truth instead of hardcoding the set. This is AUTHENTICATED but deliberately
-// NOT admin-gated: the value is a compile-time constant, not a privileged or
-// tenant-specific datum, and the registration form is admin-gated at the write
-// boundary regardless. It reads the enum directly — it never maintains its own
-// copy — so a new component type flows into the UI automatically.
+// (store.AllowedComponentTypes) and, beside it, each type's registration
+// descriptor, so the operator-facing Register dialog populates its type selector
+// AND renders each type's routing fields from the single source of truth instead
+// of hardcoding either. This is AUTHENTICATED but deliberately NOT admin-gated:
+// both values are compile-time constants, not privileged or tenant-specific data,
+// and the registration form is admin-gated at the write boundary regardless.
+//
+// The descriptors extend this route rather than a sibling (D-0168): the dialog
+// already fetches it, the descriptor list is built from the same enum in the same
+// response so the two cannot disagree, and `component_types` keeps its shape for
+// every existing reader.
 func (s *Server) handleListComponentTypes(w http.ResponseWriter, r *http.Request) {
 	types := store.AllowedComponentTypes()
+	descriptors := make([]componentTypeDescriptor, 0, len(types))
+	for _, t := range types {
+		fields, ok := credential.RegistrationFields(t)
+		if !ok {
+			// A registrable type with no contract is a wiring bug the contract's
+			// coverage test forbids; fail loudly rather than describe it as empty.
+			writeInternalError(w, fmt.Errorf("no registration contract for registrable type %q", t), "component type descriptors")
+			return
+		}
+		descriptors = append(descriptors, componentTypeDescriptor{Name: t, Fields: fields})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"component_types": types,
 		"count":           len(types),
+		"descriptors":     descriptors,
 	})
 }
 
@@ -221,10 +250,10 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-type non-credential shape rules at the same shared seam — today, the
-	// format of any config field that names another component. Shape only: a
-	// reference that names no existing component is legal (see
-	// ValidateRegistrationConfig).
+	// The type's declared registration contract, at the same shared seam
+	// (D-0168): only declared routing fields, each of its declared JSON type, a
+	// url that parses, and every registration-required field present. Shape
+	// only — nothing is resolved or dialed (see ValidateRegistrationConfig).
 	if err := componentgov.ValidateRegistrationConfig(req.Type, req.Config); err != nil {
 		writeError(w, http.StatusBadRequest, errorCodeInvalidRequest, err.Error(),
 			map[string]any{"type": req.Type})
@@ -246,9 +275,10 @@ func (s *Server) handleCreateComponent(w http.ResponseWriter, r *http.Request) {
 
 	// Default an absent or empty config to an empty JSON object at the shared
 	// registration seam, BEFORE the component is built (and so before encryption
-	// in CreateTx). A config-less registration must persist and land inert; the
-	// components.config column is NOT NULL with no default, so a nil config would
-	// otherwise trip the constraint as a generic 500 (D-0029).
+	// in CreateTx). A config-less registration of a type that declares no
+	// registration-required field must persist and land inert (D-0057, narrowed
+	// by D-0168); the components.config column is NOT NULL with no default, so a
+	// nil config would otherwise trip the constraint as a generic 500 (D-0029).
 	source := &store.Component{
 		ID:     req.ID,
 		Type:   req.Type,

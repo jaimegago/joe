@@ -98,6 +98,130 @@ func TestHandleListComponentTypes(t *testing.T) {
 	}
 }
 
+// TestHandleListComponentTypes_Descriptors pins the registration descriptor the
+// Register dialog renders from (D-0168): one per registrable type, in the enum's
+// order, each carrying the type's declared routing fields with their JSON type,
+// phase, default and label — and never a secret or credential-bearing field.
+func TestHandleListComponentTypes_Descriptors(t *testing.T) {
+	server := setupFullTestServer(t)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest("GET", "/api/v1/component-types", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	type field struct {
+		Name     string   `json:"name"`
+		Type     string   `json:"type"`
+		Phase    string   `json:"phase"`
+		Default  any      `json:"default"`
+		Label    string   `json:"label"`
+		RefersTo []string `json:"refers_to"`
+	}
+	var body struct {
+		Descriptors []struct {
+			Name   string  `json:"name"`
+			Fields []field `json:"fields"`
+		} `json:"descriptors"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	want := store.AllowedComponentTypes()
+	if len(body.Descriptors) != len(want) {
+		t.Fatalf("descriptors = %d, want one per registrable type (%d)", len(body.Descriptors), len(want))
+	}
+	byType := map[string][]field{}
+	for i, d := range body.Descriptors {
+		if d.Name != want[i] {
+			t.Errorf("descriptors[%d].name = %q, want %q (the enum's order)", i, d.Name, want[i])
+		}
+		byType[d.Name] = d.Fields
+	}
+
+	if got := byType["prometheus"]; len(got) == 0 || got[0].Name != "url" || got[0].Type != "url" || got[0].Phase != "registration" || got[0].Label == "" {
+		t.Errorf("prometheus descriptor = %+v; want its url first, typed url, required at registration, labelled", got)
+	}
+	nr := byType["newrelic"]
+	if len(nr) < 2 || nr[0].Name != "account_id" || nr[0].Type != "integer" || nr[1].Name != "region" || nr[1].Default != "US" {
+		t.Errorf("newrelic descriptor = %+v; want an integer account_id and region defaulting to US", nr)
+	}
+	if k8s := byType["kubernetes"]; len(k8s) == 0 || k8s[0].Name != "api_server" || k8s[0].Phase != "promotion" {
+		t.Errorf("kubernetes descriptor = %+v; want api_server required at promotion", k8s)
+	}
+	var git field
+	for _, f := range byType["git"] {
+		if f.Name == "provider_component_id" {
+			git = f
+		}
+	}
+	if strings.Join(git.RefersTo, ",") != "github,gitlab" {
+		t.Errorf("git provider_component_id refers_to = %v; want [github gitlab]", git.RefersTo)
+	}
+
+	// No descriptor names a secret or a credential-bearing field.
+	never := []string{"api_key", "token", "webhook_secret", "credential_provider", "env_var", "value",
+		"in_cluster", "tenant_id", "client_id", "client_secret_env_var", "federated_token_file", "http_token", "ssh_key_path"}
+	for typ, fields := range byType {
+		for _, f := range fields {
+			for _, n := range never {
+				if f.Name == n {
+					t.Errorf("%s descriptor carries %q", typ, n)
+				}
+			}
+		}
+	}
+	if gh := byType["github"]; len(gh) != 1 || gh[0].Name != "base_url" {
+		t.Errorf("github descriptor = %+v; want base_url alone (no token, no webhook_secret)", gh)
+	}
+}
+
+// minimalRegistrationConfigs is, per registrable type, the smallest config its
+// declared registration contract accepts (D-0168): exactly the fields required at
+// registration, and nothing for a type that requires none. Hard-coded rather than
+// derived from the contract, so a phase change shows up here as a failing test.
+var minimalRegistrationConfigs = map[string]string{
+	"kubernetes":   `{}`,
+	"git":          `{"url":"https://example.com/org/repo.git"}`,
+	"prometheus":   `{"url":"http://prometheus:9090"}`,
+	"mimir":        `{"url":"http://mimir:8080"}`,
+	"loki":         `{"url":"http://loki:3100"}`,
+	"tempo":        `{"url":"http://tempo:3200"}`,
+	"jaeger":       `{"url":"http://jaeger:16686"}`,
+	"splunk":       `{"url":"https://splunk:8089"}`,
+	"dynatrace":    `{"url":"https://abc123.live.dynatrace.com"}`,
+	"newrelic":     `{"account_id":1234567}`,
+	"alertmanager": `{"url":"http://alertmanager:9093"}`,
+	"pagerduty":    `{}`,
+	"grafana":      `{"url":"http://grafana:3000"}`,
+	"argocd":       `{"url":"https://argocd.example.com"}`,
+	"terraform":    `{"state_path":"/srv/terraform/prod"}`,
+	"envoy":        `{"url":"http://envoy-admin:9901"}`,
+	"falco":        `{"url":"http://falcosidekick:2802"}`,
+	"github":       `{}`,
+	"gitlab":       `{}`,
+}
+
+// TestMinimalRegistrationConfigs_CoverEveryRegistrableType keeps the table above
+// in step with the registrable set, so a new type cannot skip the two tests that
+// register every type.
+func TestMinimalRegistrationConfigs_CoverEveryRegistrableType(t *testing.T) {
+	for _, typ := range store.AllowedComponentTypes() {
+		if _, ok := minimalRegistrationConfigs[typ]; !ok {
+			t.Errorf("registrable type %q has no minimal registration config", typ)
+		}
+	}
+	if len(minimalRegistrationConfigs) != len(store.AllowedComponentTypes()) {
+		t.Errorf("minimalRegistrationConfigs has %d entries; want exactly the %d registrable types",
+			len(minimalRegistrationConfigs), len(store.AllowedComponentTypes()))
+	}
+}
+
 func TestHandleCreateComponent_MissingFields(t *testing.T) {
 	server := setupFullTestServer(t)
 	mux := http.NewServeMux()
@@ -300,9 +424,12 @@ func TestHandleCreateComponent_NoConnectProbe_KubernetesEmptyConfig(t *testing.T
 }
 
 // TestHandleCreateComponent_AdapterTypesRegisterInert confirms every registrable
-// adapter type registers as an inert, credential-less record with an empty config —
-// no Connect probe runs at registration (A003 Stream G), so types that previously
-// failed Connect with empty config now persist successfully (201). The
+// adapter type registers as an inert, credential-less record with its minimal
+// valid config (minimalRegistrationConfigs: the fields its declared contract
+// requires at registration, D-0168) — no Connect probe runs at registration (A003
+// Stream G), so a config naming an unreachable backend persists (201). It
+// registered every type with {} until the contract made a type's locator
+// required at registration. The
 // adapter-bearing types that trim-unsupported-component-types made unregistrable
 // (aws, azure, and the datastore group) moved to
 // TestHandleCreateComponent_UnregistrableTypesRejected.
@@ -317,7 +444,7 @@ func TestHandleCreateComponent_AdapterTypesRegisterInert(t *testing.T) {
 	for _, srcType := range adapterTypes {
 		t.Run(srcType, func(t *testing.T) {
 			_, _, mux := setupTestServerWithStore(t)
-			body := `{"id":"src-1","type":"` + srcType + `","name":"test source","config":{}}`
+			body := `{"id":"src-1","type":"` + srcType + `","name":"test source","config":` + minimalRegistrationConfigs[srcType] + `}`
 			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
@@ -329,7 +456,8 @@ func TestHandleCreateComponent_AdapterTypesRegisterInert(t *testing.T) {
 }
 
 // TestHandleCreateComponent_FallthroughTypes exercises source types that have no
-// adapter connect step (fall through the switch) and are saved directly.
+// adapter connect step (fall through the switch) and are saved directly, each with
+// its minimal valid config (minimalRegistrationConfigs, D-0168).
 func TestHandleCreateComponent_FallthroughTypes(t *testing.T) {
 	// Types that have no connect step (fall through the switch). The boot-only
 	// group (github/gitlab/splunk/dynatrace/newrelic) is constructed only at boot
@@ -347,7 +475,7 @@ func TestHandleCreateComponent_FallthroughTypes(t *testing.T) {
 	for _, srcType := range fallthroughTypes {
 		t.Run(srcType, func(t *testing.T) {
 			_, _, mux := setupTestServerWithStore(t)
-			body := `{"id":"src-ft","type":"` + srcType + `","name":"fallthrough source","config":{}}`
+			body := `{"id":"src-ft","type":"` + srcType + `","name":"fallthrough source","config":` + minimalRegistrationConfigs[srcType] + `}`
 			req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)

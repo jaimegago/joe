@@ -47,12 +47,40 @@ export const ComponentSchema = z.object({
   updated_at: z.string(),
 });
 
+// RegistrationFieldSchema is one non-credential routing field of a component
+// type's declared registration contract (D-0168): its config key, the JSON type
+// its value must have on the wire, the phase at which it becomes required, the
+// adapter's default where it has one, and the operator-facing label. A field
+// with `refers_to` names another component by id; `multiline` asks for a
+// multi-line input. The type and phase are closed sets: an unknown one fails the
+// parse rather than rendering a field the dialog cannot collect correctly.
+export const RegistrationFieldSchema = z.object({
+  name: z.string(),
+  type: z.enum(['string', 'url', 'integer', 'boolean']),
+  phase: z.enum(['registration', 'promotion', 'optional']),
+  default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  label: z.string(),
+  help: z.string().optional(),
+  refers_to: z.array(z.string()).optional(),
+  multiline: z.boolean().optional(),
+});
+
+// ComponentTypeDescriptorSchema is one registrable type and its declared
+// routing fields — what the Register dialog renders from. It never carries a
+// secret or a credential-bearing field: the server declares only routing fields.
+export const ComponentTypeDescriptorSchema = z.object({
+  name: z.string(),
+  fields: z.array(RegistrationFieldSchema),
+});
+
 // ComponentTypesSchema is the response of GET /api/v1/component-types — the
-// authoritative component-type enum (store.AllowedComponentTypes), so the
-// registration form populates its selector without a hardcoded TS list.
+// authoritative component-type enum (store.AllowedComponentTypes) and, beside
+// it, each type's registration descriptor, so the registration form populates
+// its selector and renders each type's fields without a hardcoded TS list.
 export const ComponentTypesSchema = z.object({
   component_types: z.array(z.string()),
   count: z.number().optional(),
+  descriptors: z.array(ComponentTypeDescriptorSchema),
 });
 
 // CreatedComponentSchema validates the 201 body of POST /api/v1/components. It

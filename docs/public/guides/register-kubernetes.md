@@ -77,6 +77,9 @@ its type, zone, connection status, and arming state (**inert** or **armed**).
      letter or digit.
    - **Type** — open the selector and choose **`kubernetes`**. The type list is populated
      from Joe's authoritative type enum, so pick the value as the UI presents it.
+   - **CA bundle (PEM)** and **Default namespace** *(optional)* — leave both empty. The
+     dialog notes that the API server URL and auth method are supplied at promotion, and
+     the Promote dialog collects the CA bundle and namespace with them.
 3. Click **Register**.
 
 No credential field is shown, and none is collected here: registration records the

@@ -1,7 +1,6 @@
 # Component registration guide — UI-driven public how-to
 Status: in-progress
 Priority: now
-Blocked-by: register-component-config-default
 
 ## What has shipped
 
@@ -29,26 +28,27 @@ The "boot-config-only" category this item used to describe is gone: since
 `adapter-dispatch-consolidation` every type is built by `factory.New`, so all of them
 come live at runtime. `docs/public/components/` was corrected to match.
 
-## Remaining work — blocked on a UI routing locator
+## Remaining work
 
-Every other documentable type needs a non-credential routing field at registration that
-the web UI cannot collect: the Register dialog sends a `config` only for `git`, the static
-Promote form collects only the env-var reference, and there is no route for editing a
-component's config afterwards.
+Every other documentable type needs a non-credential routing field at registration, and
+the Register dialog collects it: since D-0168 (`registration-routing-locator`) the dialog
+renders each type's declared registration contract from `GET /api/v1/component-types`,
+marks the fields registration requires, and refuses a malformed value before submit.
 
 - `url`: `prometheus`, `mimir`, `loki`, `tempo`, `jaeger`, `alertmanager`, `grafana`,
   `argocd`, `falco`, `splunk`, `dynatrace`, and the credential-less `envoy`.
-- `account_id`: `newrelic`.
+- `account_id`, an integer: `newrelic`.
 - `state_path`: the credential-less `terraform`.
-- The endpoint override for GitHub Enterprise Server, self-managed GitLab, and PagerDuty's
-  EU region (`base_url` / `api_url`).
 
-These types work today through the API, with the field in `config` at registration —
-`docs/public/components/connectable-systems.md` marks each one "API only". A UI how-to for
-them waits on item 3 of `register-component-config-default.md` (a per-type routing field
-in the Register dialog). When that lands, add the static types to
-`register-token-components.md` or as sibling pages, and give `terraform` and `envoy` a
-page whose happy path has no promotion step.
+Add the static types to `register-token-components.md` or as sibling pages, and give
+`terraform` and `envoy` a page whose happy path has no promotion step. Each page that
+covers one of these types says, in one line, that a component registered before D-0168
+without its locator is fixed by deleting it, registering it again, and re-assigning its
+security zone — `connectable-systems.md` already carries that line.
+
+The endpoint override for GitHub Enterprise Server, self-managed GitLab, and PagerDuty's
+EU region (`base_url` / `api_url`) is an optional field in the dialog, and
+`register-token-components.md` was updated for it in D-0168's pull request.
 
 ## Screenshots
 

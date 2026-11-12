@@ -14,6 +14,72 @@ unit of work that produced it.
 
 ---
 
+## D-0168 — Registration accepts exactly the routing fields each type declares, and refuses an absent registration-required locator; amends D-0057
+
+- Date: 2026-11-12
+- Status: accepted
+- Session: registration-routing-locator
+- Decision: every registrable component type carries **one declared registration
+  contract**, in Go beside `wiredTypes` (`internal/credential/registration.go`). Each
+  declared field names its config key, a JSON type (`string`, `url`, `integer` or
+  `boolean`), the phase it is required at (`registration`, `promotion`, or `optional`
+  with the adapter's default where it has one) and an operator-facing label; a field may
+  also carry a one-line help, the component types it refers to (git's
+  `provider_component_id`), and a multi-line flag (kubernetes's `ca_data`).
+  - **Required at registration:** the `url` of `prometheus`, `mimir`, `loki`, `tempo`,
+    `jaeger`, `alertmanager`, `grafana`, `argocd`, `falco`, `splunk`, `dynatrace`,
+    `envoy` and `git`; `terraform`'s `state_path`; `newrelic`'s integer `account_id`.
+  - **Required at promotion:** kubernetes's `api_server` and `auth_method`, which is
+    where they enter; the contract only says so.
+  - **Optional:** every other field the adapters read, with the adapter's default named.
+  - **A pinned set of adapter-read secrets** — `api_key`, `token`, `webhook_secret` — is
+    neither declared nor in the reflection-derived credential denylist, which stays
+    derived. A two-way test holds the declaration to each adapter's `ParseConfig` struct:
+    every key an adapter reads is declared, a pinned secret, or credential-bearing; every
+    declared field is read by its adapter, in the Go kind its JSON type implies, with the
+    default the adapter actually applies.
+  - `componentgov.ValidateRegistrationConfig` enforces the contract **for shape only** at
+    the shared seam both the HTTP create path and the `register_component` tool run
+    through. It refuses with a 4xx a field the type does not declare (the secrets
+    included), a value of the wrong JSON type with no coercion (`"123"` is not an
+    integer), a `url` that is not an absolute `scheme://` URL, a malformed component-id
+    reference, a non-object config, and an absent field required at registration. A
+    field's zero value counts as absent, as the adapters treat it. No adapter code and no
+    connect probe go onto the create path.
+  - The contract is served on `GET /api/v1/component-types` as `descriptors`, one per
+    type, beside the unchanged `component_types` list; no descriptor can carry a secret or
+    a credential-bearing field. The Register dialog renders every type's fields from it,
+    with no per-type code, and sends each value in its declared JSON type.
+  - **Amends D-0057.** "A config-less registration lands inert" now applies only where the
+    type declares no registration-required field — `kubernetes`, `github`, `gitlab`,
+    `pagerduty`. For those an absent config, or a JSON `null`, still persists as `{}`.
+    D-0057 is not edited in place.
+- Basis: the joe-pm design session `registration-routing-locator` (five rulings,
+  2026-11-11 to 2026-11-12). With no route that edits a component's config, a
+  `prometheus` registered without its `url` was not inert but stranded: promotion arms
+  credentials and never touches routing, Connect fails, and the only remedy is delete and
+  re-register. `terraform` and `envoy` can never be promoted, so registration is the only
+  moment their locator can enter. The executor's check found that a security-zone
+  assignment attaches to an unpromoted component and cascades away on delete; ruling 2
+  was re-affirmed in light of it, since that zone is lost only for a component registered
+  before this change, which must be deleted under either answer.
+- Consequences: a component registered before this decision without its locator is left
+  as it is; the remedy is to delete it, register it again, and re-assign its security
+  zone. Inline secrets already stored are untouched (`adapter-inline-secrets`). git's
+  `url` is typed `url`, so a bare filesystem path is refused at registration and the
+  `file://` form is accepted; the public guide documents the HTTPS clone URL.
+  `TestCreateComponent_NoConnectProbe` is unchanged.
+- Rejected alternatives: per-type fields hard-coded in the dialog (a second copy of what
+  the adapters know, and the API and tool would still accept what the dialog refused);
+  calling each adapter's `ParseConfig` at registration (adapter code on the create path);
+  strings on the wire with coercion (two accepted spellings of one value); leaving a
+  required locator optional, with or without an edit route (ships a dialog that creates
+  components that must be deleted to be fixed); declaring `webhook_secret` as a
+  registration field (a secret in the routing contract).
+- Supersedes: amends D-0057's scope as stated above; supersedes nothing else.
+
+---
+
 ## D-0167 — Notes are probabilistic input and never permit; the graph stays structure-only
 
 - Date: 2026-10-11

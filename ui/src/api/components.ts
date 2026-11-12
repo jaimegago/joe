@@ -11,7 +11,9 @@ import {
 import { z } from 'zod';
 import type {
   Component,
+  ComponentTypeDescriptor,
   CreatedComponent,
+  RegistrationConfig,
   PromotionRequirements,
   PromotionCandidates,
   PromoteResponse,
@@ -23,28 +25,29 @@ export function fetchComponents(): Promise<Component[]> {
     .then((r) => z.object({ components: z.array(ComponentSchema) }).parse(r).components);
 }
 
-// fetchComponentTypes returns the authoritative component-type enum from the
-// backend (GET /api/v1/component-types) so the registration form's type
-// selector never hardcodes the set.
-export function fetchComponentTypes(): Promise<string[]> {
+// fetchComponentTypes returns one registration descriptor per registrable type
+// from the backend (GET /api/v1/component-types): the type's name and its
+// declared routing fields. The registration form renders its type selector and
+// each type's fields from it, so it hardcodes neither the set nor any field.
+export function fetchComponentTypes(): Promise<ComponentTypeDescriptor[]> {
   return apiClient
     .get<unknown>('/api/v1/component-types')
-    .then((r) => ComponentTypesSchema.parse(r).component_types);
+    .then((r) => ComponentTypesSchema.parse(r).descriptors);
 }
 
 // createComponent registers a new, inert component via the admin-gated governed
-// create endpoint (POST /api/v1/components). It carries id/type/name plus, for
-// the types that need one, a NON-CREDENTIAL routing config — never a credential
-// by construction (credentials enter at a separate promotion step, and the
-// backend refuses a credential-bearing field here). Today only the git branch
-// populates config: a repository is unusable without its URL. The component
-// lands credential-less in the unassigned zone under the read-only floor and can
-// do nothing until it is separately promoted and zone-assigned.
+// create endpoint (POST /api/v1/components). It carries id/type/name plus the
+// type's NON-CREDENTIAL routing config — only the fields the type's descriptor
+// declares, each typed as declared (D-0168). Never a credential: credentials
+// enter at a separate promotion step, and the backend refuses a credential or a
+// secret here. The component lands credential-less in the unassigned zone under
+// the read-only floor and can do nothing until it is separately promoted and
+// zone-assigned.
 export function createComponent(input: {
   id: string;
   type: string;
   name: string;
-  config?: Record<string, string>;
+  config?: RegistrationConfig;
 }): Promise<CreatedComponent> {
   return apiClient
     .post<unknown>('/api/v1/components', input)

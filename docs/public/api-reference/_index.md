@@ -426,8 +426,31 @@ secret value. See [The component lifecycle](../concepts/component-lifecycle/) an
 
 ### `GET /api/v1/component-types`
 
-Lists the supported component types. **Auth:** authenticated. Response `200`:
-`{ "component_types": ["string"], "count": N }`.
+Lists the supported component types and each type's registration descriptor — the
+non-credential routing fields registration accepts for it. **Auth:** authenticated.
+Response `200`:
+
+```json
+{
+  "component_types": ["string"],
+  "count": N,
+  "descriptors": [
+    {
+      "name": "prometheus",
+      "fields": [
+        { "name": "url", "type": "url", "phase": "registration", "label": "Prometheus URL" },
+        { "name": "org_id", "type": "string", "phase": "optional", "label": "Tenant ID (X-Scope-OrgID)",
+          "help": "Only for a multi-tenant backend." }
+      ]
+    }
+  ]
+}
+```
+
+A field's `type` is `string`, `url`, `integer` or `boolean`; its `phase` is `registration`
+(required to register), `promotion` (supplied at promotion) or `optional`. An optional field
+may carry the adapter's `default`; a field naming another component carries `refers_to`, the
+types it may name. No descriptor carries a credential or a secret.
 
 ### `GET /api/v1/components`
 
@@ -457,9 +480,12 @@ Registers a component. **Auth:** admin-gated. Request body:
 { "id": "string", "type": "string", "name": "string", "config": { } }
 ```
 
-Credential-bearing fields in `config` are rejected. Response `201`: the stored component
-(`id`, `type`, `name`, `config`, `status`, `last_sync_at`, `last_error`, `created_at`,
-`updated_at`). `409` if the id exists, `400` if the type is unsupported.
+`config` is checked against the type's descriptor: `400` for a credential-bearing field, a
+field the type does not declare (a secret such as `token`, `api_key` or `webhook_secret`
+included), a value of the wrong JSON type, a `url` that is not absolute, or a missing field
+required at registration. A type with no registration-required field may omit `config`.
+Response `201`: the component as the read-model projection (the same shape as the list
+entry; the config is not echoed). `409` if the id exists, `400` if the type is unsupported.
 
 ### `GET /api/v1/components/{id}`
 

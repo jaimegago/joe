@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { createWrapper } from '@/test/utils';
 import { ComponentRegisterForm } from './ComponentRegisterForm';
 import { fetchComponentTypes, fetchComponents } from '@/api/components';
+import type { ComponentTypeDescriptor } from '@/api/types';
 
 vi.mock('@/api/components', () => ({
   fetchComponentTypes: vi.fn(),
@@ -12,6 +13,79 @@ vi.mock('@/api/components', () => ({
 
 const mockTypes = vi.mocked(fetchComponentTypes);
 const mockComponents = vi.mocked(fetchComponents);
+
+// Descriptors in the shape GET /api/v1/component-types serves (D-0168). The
+// dialog renders every field from these — nothing in it is specific to a type.
+const DESCRIPTORS: ComponentTypeDescriptor[] = [
+  {
+    name: 'kubernetes',
+    fields: [
+      { name: 'api_server', type: 'url', phase: 'promotion', label: 'API server URL' },
+      { name: 'auth_method', type: 'string', phase: 'promotion', label: 'Auth method' },
+      {
+        name: 'ca_data',
+        type: 'string',
+        phase: 'optional',
+        label: 'CA bundle (PEM)',
+        multiline: true,
+      },
+      { name: 'namespace', type: 'string', phase: 'optional', label: 'Default namespace' },
+    ],
+  },
+  {
+    name: 'prometheus',
+    fields: [
+      { name: 'url', type: 'url', phase: 'registration', label: 'Prometheus URL' },
+      { name: 'org_id', type: 'string', phase: 'optional', label: 'Tenant ID (X-Scope-OrgID)' },
+    ],
+  },
+  {
+    name: 'git',
+    fields: [
+      { name: 'url', type: 'url', phase: 'registration', label: 'Repository URL' },
+      { name: 'branch', type: 'string', phase: 'optional', default: 'HEAD', label: 'Branch' },
+      {
+        name: 'provider_component_id',
+        type: 'string',
+        phase: 'optional',
+        label: 'Hosting provider',
+        refers_to: ['github', 'gitlab'],
+      },
+    ],
+  },
+  {
+    name: 'newrelic',
+    fields: [
+      { name: 'account_id', type: 'integer', phase: 'registration', label: 'Account ID' },
+      { name: 'region', type: 'string', phase: 'optional', default: 'US', label: 'Region' },
+    ],
+  },
+  {
+    name: 'argocd',
+    fields: [
+      { name: 'url', type: 'url', phase: 'registration', label: 'Argo CD URL' },
+      {
+        name: 'insecure_tls',
+        type: 'boolean',
+        phase: 'optional',
+        default: false,
+        label: 'Skip TLS verification',
+      },
+    ],
+  },
+  {
+    name: 'github',
+    fields: [
+      {
+        name: 'base_url',
+        type: 'url',
+        phase: 'optional',
+        default: 'https://api.github.com',
+        label: 'API base URL',
+      },
+    ],
+  },
+];
 
 function renderForm(onSubmit = vi.fn()) {
   const { Wrapper } = createWrapper();
@@ -23,10 +97,19 @@ function renderForm(onSubmit = vi.fn()) {
   return { onSubmit };
 }
 
+async function selectType(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByRole('combobox', { name: /^type$/i }));
+  await user.click(await screen.findByRole('option', { name: label }));
+}
+
+function registerButton() {
+  return screen.getByRole('button', { name: /register/i });
+}
+
 describe('ComponentRegisterForm', () => {
   beforeEach(() => {
     mockTypes.mockReset();
-    mockTypes.mockResolvedValue(['kubernetes', 'prometheus', 'git']);
+    mockTypes.mockResolvedValue(DESCRIPTORS);
     mockComponents.mockReset();
     mockComponents.mockResolvedValue([]);
   });
@@ -96,33 +179,60 @@ describe('ComponentRegisterForm', () => {
     await user.type(idInput, 'Bad/ID');
 
     expect(idInput).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByRole('button', { name: /register/i })).toBeDisabled();
+    expect(registerButton()).toBeDisabled();
   });
 
-  // --- git: type-conditional routing config (D-0150) ---
-  //
-  // Config carriage is deliberately per-type, not a generic config editor. The
-  // git branch collects the repository URL and an optional hosting declaration;
-  // every other type submits exactly the payload it always did.
+  // --- routing fields rendered from the type's descriptor (D-0168) ---
 
-  async function selectType(user: ReturnType<typeof userEvent.setup>, label: string) {
-    await user.click(screen.getByRole('combobox', { name: /^type$/i }));
-    await user.click(await screen.findByRole('option', { name: label }));
-  }
-
-  it('submits no config for a non-git type', async () => {
+  it('submits no config when a type has nothing required and nothing is set', async () => {
     const { onSubmit } = renderForm();
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText(/^name$/i), 'Prod Cluster');
     await selectType(user, 'kubernetes');
-    expect(screen.queryByLabelText(/repository url/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /register/i }));
+    // Promotion-phase fields are not collected here; the dialog says where they go.
+    expect(screen.queryByLabelText(/api server url/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/supplied at promotion: api server url, auth method/i)
+    ).toBeInTheDocument();
+    // An optional multi-line field is collected in a textarea, so a PEM keeps its lines.
+    expect(screen.getByLabelText(/ca bundle/i).tagName).toBe('TEXTAREA');
+
+    await user.click(registerButton());
     expect(onSubmit).toHaveBeenCalledWith({
       id: 'prod-cluster',
       type: 'kubernetes',
       name: 'Prod Cluster',
+    });
+  });
+
+  it('marks a registration-required URL required and refuses a malformed one', async () => {
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'Prod Prometheus');
+    await selectType(user, 'prometheus');
+
+    const url = screen.getByLabelText(/prometheus url/i);
+    expect(url).toBeRequired();
+    // Required before submit: nothing typed, nothing to send.
+    expect(registerButton()).toBeDisabled();
+
+    // The missing-scheme mistake is refused before the server sees it.
+    await user.type(url, 'prometheus:9090');
+    expect(url).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(/must be an absolute url/i)).toBeInTheDocument();
+    expect(registerButton()).toBeDisabled();
+
+    await user.clear(url);
+    await user.type(url, 'http://prometheus:9090');
+    await user.click(registerButton());
+    expect(onSubmit).toHaveBeenCalledWith({
+      id: 'prod-prometheus',
+      type: 'prometheus',
+      name: 'Prod Prometheus',
+      config: { url: 'http://prometheus:9090' },
     });
   });
 
@@ -134,14 +244,16 @@ describe('ComponentRegisterForm', () => {
     await selectType(user, 'git');
 
     // A repository is unusable without its URL, so submit stays disabled.
-    expect(screen.getByRole('button', { name: /register/i })).toBeDisabled();
+    expect(registerButton()).toBeDisabled();
 
     await user.type(
       screen.getByLabelText(/repository url/i),
       'https://github.com/org/platform.git'
     );
-    await user.click(screen.getByRole('button', { name: /register/i }));
+    await user.click(registerButton());
 
+    // The optional branch was left empty, so it is not sent: the adapter's
+    // default (HEAD) applies.
     expect(onSubmit).toHaveBeenCalledWith({
       id: 'platform-repo',
       type: 'git',
@@ -165,16 +277,107 @@ describe('ComponentRegisterForm', () => {
     await user.type(screen.getByLabelText(/repository url/i), 'https://example.com/r.git');
 
     await user.click(screen.getByRole('combobox', { name: /hosting provider/i }));
-    // Only repository hosts are offered — never every registered component.
+    // Only the types the field refers to are offered — never every registered component.
     expect(screen.queryByRole('option', { name: /Prod \(kubernetes\)/ })).not.toBeInTheDocument();
     await user.click(await screen.findByRole('option', { name: /Corp GitHub \(github\)/ }));
 
-    await user.click(screen.getByRole('button', { name: /register/i }));
+    await user.click(registerButton());
     expect(onSubmit).toHaveBeenCalledWith({
       id: 'platform-repo',
       type: 'git',
       name: 'Platform Repo',
       config: { url: 'https://example.com/r.git', provider_component_id: 'gh-main' },
+    });
+  });
+
+  it('sends an integer as a JSON number and refuses a non-integer', async () => {
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'NR');
+    await selectType(user, 'newrelic');
+
+    const account = screen.getByLabelText(/account id/i);
+    await user.type(account, '12a');
+    expect(screen.getByText(/must be a whole number/i)).toBeInTheDocument();
+    expect(registerButton()).toBeDisabled();
+
+    await user.clear(account);
+    await user.type(account, '1234567');
+    await user.type(screen.getByLabelText(/region/i), 'EU');
+    await user.click(registerButton());
+    expect(onSubmit).toHaveBeenCalledWith({
+      id: 'nr',
+      type: 'newrelic',
+      name: 'NR',
+      config: { account_id: 1234567, region: 'EU' },
+    });
+  });
+
+  it('sends a checked boolean as true', async () => {
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'Argo');
+    await selectType(user, 'argocd');
+    await user.type(screen.getByLabelText(/argo cd url/i), 'https://argocd.example.com');
+    await user.click(screen.getByRole('checkbox', { name: /skip tls verification/i }));
+    await user.click(registerButton());
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      id: 'argo',
+      type: 'argocd',
+      name: 'Argo',
+      config: { url: 'https://argocd.example.com', insecure_tls: true },
+    });
+  });
+
+  it('shows an optional field’s default and sends nothing when it is left empty', async () => {
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'GH');
+    await selectType(user, 'github');
+
+    expect(screen.getByLabelText(/api base url/i)).not.toBeRequired();
+    expect(screen.getByText(/defaults to https:\/\/api\.github\.com/i)).toBeInTheDocument();
+    await user.click(registerButton());
+    expect(onSubmit).toHaveBeenCalledWith({ id: 'gh', type: 'github', name: 'GH' });
+  });
+
+  it('drops the previous type’s values when the type changes', async () => {
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'Switcher');
+    await selectType(user, 'prometheus');
+    await user.type(screen.getByLabelText(/tenant id/i), 'team-a');
+    await selectType(user, 'github');
+    await user.click(registerButton());
+
+    expect(onSubmit).toHaveBeenCalledWith({ id: 'switcher', type: 'github', name: 'Switcher' });
+  });
+
+  it('renders a type it has never seen from its descriptor alone', async () => {
+    mockTypes.mockResolvedValue([
+      {
+        name: 'acme',
+        fields: [{ name: 'endpoint', type: 'url', phase: 'registration', label: 'Acme endpoint' }],
+      },
+    ]);
+    const { onSubmit } = renderForm();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/^name$/i), 'Acme');
+    await selectType(user, 'acme');
+    await user.type(screen.getByLabelText(/acme endpoint/i), 'https://acme.example.com');
+    await user.click(registerButton());
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      id: 'acme',
+      type: 'acme',
+      name: 'Acme',
+      config: { endpoint: 'https://acme.example.com' },
     });
   });
 });

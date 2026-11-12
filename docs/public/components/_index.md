@@ -22,10 +22,10 @@ runtime, with no daemon restart. This page documents the shared flow once throug
 then points you to [Connectable systems](connectable-systems/) for the per-type credential
 mechanism of each system you can connect today.
 
-The web UI walks the same flow for the types whose registration needs no endpoint URL —
-Kubernetes, Git, GitHub, GitLab, and PagerDuty — see [Guides](../guides/). The UI's Register
-dialog cannot yet collect an endpoint URL, so a type that needs one (Prometheus, Grafana,
-Argo CD, and the rest) is registered through the API below, with the URL in its `config`.
+The web UI walks the same flow for every type: its Register dialog renders each type's
+routing fields and marks the ones registration requires, such as a Prometheus or Grafana
+`url`. Step-by-step guides cover Kubernetes, Git, GitHub, GitLab, and PagerDuty — see
+[Guides](../guides/).
 
 For the *why* behind the two-step lifecycle, read
 [The component lifecycle](../concepts/component-lifecycle/). For the configuration
@@ -55,7 +55,12 @@ curl -s http://localhost:7777/api/v1/components \
       }'
 ```
 
-The `config` carries only non-credential routing fields (endpoint, org, path, and so on).
+The `config` carries only the non-credential routing fields the type declares —
+[Connectable systems](connectable-systems/) lists each type's. Registration refuses an
+undeclared field (an inline `token`, `api_key` or `webhook_secret` included), a value of the
+wrong JSON type — New Relic's `account_id` is `1234567`, not `"1234567"` — a `url` that is
+not an absolute URL such as `https://host:port`, and a missing required field.
+`GET /api/v1/component-types` serves the same declaration per type.
 
 ### 2. Inspect what arming requires
 

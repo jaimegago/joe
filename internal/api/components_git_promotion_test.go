@@ -240,9 +240,11 @@ func TestGitPromote_RefusesForeignKind(t *testing.T) {
 // kind, and git_read returns its contents through the governed accessor — the
 // chain that had no operator path at all before this change.
 //
-// The repository is a real on-disk git repository cloned over a local path, so
+// The repository is a real on-disk git repository cloned over a file:// URL, so
 // the test exercises the actual go-git clone the adapter performs with a real
-// anonymous (nil) auth method, without reaching the network.
+// anonymous (nil) auth method, without reaching the network. The registration
+// contract types git's url as a url (D-0168), so a bare filesystem path is
+// refused at registration; the file:// form of the same path is accepted.
 func TestGitEndToEnd_NoneArmedRepositoryIsReadable(t *testing.T) {
 	// The adapter clones under the joe home, which resolves from HOME.
 	t.Setenv("HOME", t.TempDir())
@@ -250,7 +252,7 @@ func TestGitEndToEnd_NoneArmedRepositoryIsReadable(t *testing.T) {
 
 	f := newLLMAdminFixtureWithAdapters(t)
 	f.markAdmin("user:alice")
-	registerComponent(t, f, "repo-pub", "git", `{"url":`+jsonString(origin)+`}`)
+	registerComponent(t, f, "repo-pub", "git", `{"url":`+jsonString("file://"+origin)+`}`)
 
 	w := f.do(http.MethodPost, "/api/v1/components/repo-pub/promote",
 		`{"credential_provider":"none"}`, "user:alice")
