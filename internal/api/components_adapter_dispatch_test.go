@@ -87,11 +87,11 @@ func TestPromote_RegistersAdapterForFormerlyBootOnlyType(t *testing.T) {
 	const envVar = "JOE_ADAPTER_DISPATCH_GITHUB_TOKEN"
 	t.Setenv(envVar, "a-token")
 
-	// The inline token satisfies the github adapter's ParseConfig, which runs
-	// ahead of credential resolution and requires the field to be non-empty; the
-	// resolved static value then overrides it. Not a credential-bearing field at
-	// the registration seam, so this registers.
-	registerComponent(t, f, "c-github", store.ComponentTypeGitHub, `{"token":"placeholder-overridden-at-connect"}`)
+	// github declares no registration-required field, so it registers with an
+	// empty config. Its adapter requires a token only once the credential
+	// reference is resolved at Connect, and an inline token is refused at
+	// registration as an adapter-read secret (D-0168).
+	registerComponent(t, f, "c-github", store.ComponentTypeGitHub, `{}`)
 
 	w := f.do(http.MethodPost, "/api/v1/components/c-github/promote",
 		`{"env_var":"`+envVar+`"}`, "user:alice")

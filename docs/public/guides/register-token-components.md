@@ -23,15 +23,16 @@ variable's *name*, never the token.
 
 `<LABEL>` is your choice — `PROD`, `ACME`, anything that tells your components apart.
 
-**What the web UI reaches.** The web UI connects these types to their public endpoints:
-`api.github.com`, `gitlab.com`, and `api.pagerduty.com`. The Register dialog has no field
-for a different endpoint, so for GitHub Enterprise Server, a self-managed GitLab, or
-PagerDuty's EU service region, register through the API instead and set the endpoint in
-the component's `config` — `base_url` for GitHub and GitLab, `api_url` for PagerDuty. See
-[Components](../../components/) for the API flow.
+**Endpoints.** By default these types connect to their public endpoints:
+`api.github.com`, `gitlab.com`, and `api.pagerduty.com`. For GitHub Enterprise Server, a
+self-managed GitLab, or PagerDuty's EU service region, fill in the optional endpoint field
+the Register dialog shows for the type — `base_url` for GitHub and GitLab, `api_url` for
+PagerDuty.
 
 Other static-credential types — Prometheus, Grafana, Argo CD, and the rest — need an
-endpoint URL as well, so they follow that API path too. For a Git repository, see
+endpoint URL at registration, which the Register dialog collects as a required field; see
+[Connectable systems](../../components/connectable-systems/) for each type's fields. For a
+Git repository, see
 [Register a Git repository](../register-git/); for a Kubernetes cluster, see
 [Register a Kubernetes component](../register-kubernetes/).
 
@@ -76,6 +77,9 @@ its type, zone, connection status, and arming state (**inert** or **armed**).
      in URLs, zone assignments, and audit records: 1–63 lowercase letters, digits, and
      hyphens, starting and ending with a letter or digit.
    - **Type** — choose **`github`**, **`gitlab`**, or **`pagerduty`**.
+   - **API base URL**, **Instance URL**, or **API URL** (optional) — only for GitHub
+     Enterprise Server, a self-managed GitLab, or PagerDuty's EU service region. Leave it
+     empty for the public endpoint.
 3. Click **Register**.
 
 No credential is collected here. The new row appears with its zone marked

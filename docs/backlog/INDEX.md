@@ -40,6 +40,7 @@ after the move rather than by inspection.
 | Slug | Title | Status | Priority |
 |------|-------|--------|----------|
 | [`act-policy-vestigial`](act-policy-vestigial.md) | ActPolicy opt-in seam: vestigial after knowledge prune | open | later |
+| [`adapter-inline-secrets`](adapter-inline-secrets.md) | Adapters still read inline secrets: retire the fallback, give webhook_secret a promoted path | open | |
 | [`admin-bootstrap-cli`](admin-bootstrap-cli.md) | Admin bootstrap CLI — open residue | open | next |
 | [`admin-bootstrap-cli-04`](admin-bootstrap-cli-04.md) | The `cfg.Database` override block is written out three times | open | later |
 | [`admin-list-null-arrays`](admin-list-null-arrays.md) | Admin list endpoints serialize an empty list as `null`, and three UI parsers reject it | open | next |
@@ -57,6 +58,7 @@ after the move rather than by inspection.
 | [`change-impact-analysis`](change-impact-analysis.md) | Change-impact analysis — a capability of the existing agent loop | open | next |
 | [`chat-session-controls`](chat-session-controls.md) | Chat session controls — compression, an accurate usage indicator, effort, and model selection | open | later |
 | [`cli-version-and-help`](cli-version-and-help.md) | Backlog — Skills/incident leaf help still runs behind a config load (deferred from cli-version-and-help / D-0143) | open | next |
+| [`component-config-edit-route`](component-config-edit-route.md) | A route to change a registered component's routing config | open | later |
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
 | [`component-description-field`](component-description-field.md) | Component description field — operator-declared semantics on the component record | open | later |
 | [`component-name-rename`](component-name-rename.md) | Component Name rename — no mutation path exists | open | |

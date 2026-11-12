@@ -3,10 +3,12 @@ package coreagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/audit"
+	"github.com/jaimegago/joe/internal/componentgov"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/safety"
 )
@@ -100,7 +102,7 @@ func TestRegisterComponentTool_WritesAuditOnCredentiallessSuccess(t *testing.T) 
 
 	_, err := tool.Execute(context.Background(), map[string]any{
 		"name": "discovered-cluster", "type": "kubernetes",
-		"config": map[string]any{"endpoint": "https://k8s.internal"},
+		"config": map[string]any{"api_server": "https://k8s.internal:6443"},
 	})
 	if err != nil {
 		t.Fatalf("credential-less register: unexpected error %v", err)
@@ -135,7 +137,9 @@ func TestRegisterComponentTool_WritesAuditOnCredentiallessSuccess(t *testing.T) 
 // register_component call with NO config arg must persist a credential-less,
 // inert component whose stored config round-trips to a valid empty JSON object.
 // Both registration surfaces consult the same normalization seam, so neither can
-// regress the restored D-0029 config-less-registration invariant.
+// regress the restored D-0029 config-less-registration invariant. Like its twin it
+// moved from prometheus to github, a type declaring no registration-required field
+// (D-0057, narrowed by D-0168).
 func TestRegisterComponentTool_AbsentConfigPersistsInert(t *testing.T) {
 	svc := makeTestServices(t)
 	svc.Audit = audit.NewRepository(svc.Store.DB(), svc.Store.Driver())
@@ -143,7 +147,7 @@ func TestRegisterComponentTool_AbsentConfigPersistsInert(t *testing.T) {
 
 	// No "config" arg at all.
 	_, err := tool.Execute(context.Background(), map[string]any{
-		"name": "discovered-inert", "type": "prometheus",
+		"name": "discovered-inert", "type": "github",
 	})
 	if err != nil {
 		t.Fatalf("absent-config register: unexpected error %v", err)
@@ -245,4 +249,52 @@ func TestRegisterComponentTool_GitValidatesProviderReferenceShape(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("tool refused a well-formed but dangling provider reference: %v", err)
 	}
+}
+
+// TestRegisterComponentTool_EnforcesRegistrationContract proves the agent surface
+// refuses what the HTTP path refuses, because both run the type's declared
+// registration contract at the shared seam (D-0168) — and that it accepts a typed
+// value in the shape a model's arguments actually arrive in: JSON numbers decode
+// to float64, and re-encode as the integer the contract requires.
+func TestRegisterComponentTool_EnforcesRegistrationContract(t *testing.T) {
+	refused := map[string]map[string]any{
+		"prometheus without its url": {"name": "p", "type": "prometheus"},
+		"an undeclared field": {"name": "g", "type": "github",
+			"config": map[string]any{"endpoint": "https://github.example.com"}},
+		"a string for an integer": {"name": "n", "type": "newrelic",
+			"config": map[string]any{"account_id": "1234567"}},
+		"an inline api_key": {"name": "p", "type": "prometheus",
+			"config": map[string]any{"url": "http://prometheus:9090", "api_key": "k"}},
+	}
+	for name, args := range refused {
+		t.Run("refuses/"+name, func(t *testing.T) {
+			svc := makeTestServices(t)
+			tool := NewRegisterComponentTool(svc, slog.Default())
+			_, err := tool.Execute(context.Background(), args)
+			if err == nil {
+				t.Fatalf("tool accepted %v", args)
+			}
+			if !errors.Is(err, componentgov.ErrInvalidRegistrationConfig) {
+				t.Errorf("refusal does not come from the shared contract seam: %v", err)
+			}
+			comps, lerr := svc.Store.Components.List(context.Background())
+			if lerr != nil {
+				t.Fatalf("list components: %v", lerr)
+			}
+			if len(comps) != 0 {
+				t.Errorf("component persisted despite the refusal")
+			}
+		})
+	}
+
+	t.Run("accepts/a model's integer", func(t *testing.T) {
+		svc := makeTestServices(t)
+		tool := NewRegisterComponentTool(svc, slog.Default())
+		if _, err := tool.Execute(context.Background(), map[string]any{
+			"name": "n", "type": "newrelic",
+			"config": map[string]any{"account_id": float64(1234567)},
+		}); err != nil {
+			t.Fatalf("tool refused an integer account_id decoded as float64: %v", err)
+		}
+	})
 }

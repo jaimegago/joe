@@ -59,9 +59,11 @@ In the left sidebar, click **Components**.
    - **Component ID** — prefilled from the Name (e.g. `payments-repo`) and read-only by
      default; click **Edit** beside it to set your own. It is a permanent identifier: 1–63
      lowercase letters, digits, and hyphens, starting and ending with a letter or digit.
-   - **Type** — choose **`git`**. Two more fields appear.
+   - **Type** — choose **`git`**. Three more fields appear.
    - **Repository URL** — the HTTPS clone URL. Required. It carries no credential; a
      private repository gets its token reference at promotion.
+   - **Branch** *(optional)* — the branch to track. Leave it empty for the repository's
+     default branch.
    - **Hosting provider** *(optional)* — the registered `github` or `gitlab` component that
      hosts this repository, so its pull-request surface can be found alongside it. This is
      for discovery only: it grants no access and changes no permissions. Leave it unset if
@@ -71,9 +73,7 @@ In the left sidebar, click **Components**.
 The new row appears with its zone marked **⚠ unassigned** and its arming state **inert**.
 Joe has not contacted the repository yet.
 
-Joe tracks the repository's default branch. The dialog does not offer a branch choice; to
-track another branch, register through the API and set `branch` in the component's
-`config` — see [Components](../../components/).
+Joe tracks the repository's default branch unless you set **Branch**.
 
 ## Step 3 — Assign the component a zone (admin)
 

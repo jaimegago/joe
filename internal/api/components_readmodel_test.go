@@ -107,21 +107,20 @@ func TestComponentReadModel_ArmedHidesLocators_GetAndList(t *testing.T) {
 // read-model closure: the POST /api/v1/components 201 body serializes the SAME
 // componentView projection the GET endpoints return, so a registration echo can no
 // more leak a credential locator or the raw Config blob than a read can. The
-// submitted config deliberately carries locator-shaped keys that PASS the
-// credential-less-at-registration guard (audience is excluded from the
-// credential-bearing set; the secret names uri/password/api_key are unknown to it),
-// so the record registers 201 and those keys land in the stored Config — making the
-// absence assertion on the 201 body a genuine regression guard: were the handler to
-// echo the raw store.Component, the blob (and its audience key) would appear. RBAC
-// is disabled in the test harness, so requireAdmin permits the create. The type is
-// incidental to what this pins — RejectCredentialFields inspects the config blob
-// alone, never the type — so the fixture moved from mongodb to kubernetes when
-// trim-unsupported-component-types made the datastore group unregistrable.
+// submitted config carries every routing field kubernetes declares, with
+// recognizable values, so the record registers 201 and those values land in the
+// stored Config — making the absence assertions on the 201 body a genuine
+// regression guard: were the handler to echo the raw store.Component, the
+// "config" key and the stored values would appear. Before the registration
+// contract (D-0168) the fixture carried undeclared locator-shaped keys (audience,
+// uri, password, api_key); registration now refuses those, so the guard rests on
+// declared fields instead. RBAC is disabled in the test harness, so requireAdmin
+// permits the create.
 func TestComponentReadModel_CreateEchoHidesLocators(t *testing.T) {
 	_, _, mux := setupTestServerWithStore(t)
 
 	body := `{"id":"echo-src","type":"kubernetes","name":"Echo Store","config":` +
-		`{"audience":"github","uri":"mongodb://user:password@host:27017/db","password":"p","api_key":"k","endpoint":"mongodb://host:27017"}}`
+		`{"api_server":"https://echo-cluster.internal:6443","auth_method":"static-bearer","ca_data":"ECHO-PEM-DATA","namespace":"echo-ns"}}`
 	req := httptest.NewRequest("POST", "/api/v1/components", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -131,6 +130,11 @@ func TestComponentReadModel_CreateEchoHidesLocators(t *testing.T) {
 	}
 	createBody := w.Body.String()
 	assertNoLocatorKeys(t, createBody)
+	for _, stored := range []string{"echo-cluster.internal", "ECHO-PEM-DATA", "echo-ns", "api_server", "ca_data"} {
+		if strings.Contains(createBody, stored) {
+			t.Errorf("create echo leaks stored config %q; body: %s", stored, createBody)
+		}
+	}
 
 	// The echo is the read-model shape: identity fields present, and an inert
 	// (credential-less) registration projects armed=false with no provider.

@@ -42,7 +42,7 @@ import { ComponentZoneAssign } from '@/components/admin/ComponentZoneAssign';
 import { ProposedAdmissions } from '@/components/admin/ProposedAdmissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { STATUS_CONFIG } from '@/lib/constants';
-import type { Component } from '@/api/types';
+import type { Component, RegistrationConfig } from '@/api/types';
 import { Database } from 'lucide-react';
 
 function StatusDot({ status }: { status: Component['status'] }) {
@@ -135,12 +135,8 @@ export function ComponentsPage() {
   // client-side on isAdmin to match the server-side governed create endpoint,
   // which remains the real enforcement.
   const registerComponentMut = useMutation({
-    mutationFn: (data: {
-      id: string;
-      type: string;
-      name: string;
-      config?: Record<string, string>;
-    }) => createComponent(data),
+    mutationFn: (data: { id: string; type: string; name: string; config?: RegistrationConfig }) =>
+      createComponent(data),
     onSuccess: (comp) => {
       // The component is registered INERT — credential-less, in the unassigned
       // zone, under the read-only floor. Point the operator at the next
@@ -156,9 +152,10 @@ export function ComponentsPage() {
       void qc.invalidateQueries({ queryKey: QUERY_KEYS.componentZones });
     },
     onError: (e: Error) => {
-      // Duplicate id is a 409 from the governed create endpoint. The
-      // credential-rejection 400 is defended against here even though this form
-      // sends no config and so cannot trigger it.
+      // Duplicate id is a 409 from the governed create endpoint. A 400 is the
+      // registration contract refusing the config (D-0168) — the form checks
+      // the same rules first, but the server is authoritative, so its message
+      // is shown as given.
       if (e instanceof ApiRequestError && e.status === 409) {
         toast.error('A component with that ID already exists. Choose a different ID.');
         return;

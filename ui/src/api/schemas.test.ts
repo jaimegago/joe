@@ -137,16 +137,75 @@ describe('CreatedComponentSchema', () => {
 });
 
 describe('ComponentTypesSchema', () => {
-  it('parses the component-type enum response', () => {
+  const descriptors = [
+    {
+      name: 'prometheus',
+      fields: [
+        { name: 'url', type: 'url', phase: 'registration', label: 'Prometheus URL' },
+        { name: 'org_id', type: 'string', phase: 'optional', label: 'Tenant ID' },
+      ],
+    },
+    {
+      name: 'argocd',
+      fields: [
+        { name: 'url', type: 'url', phase: 'registration', label: 'Argo CD URL' },
+        {
+          name: 'insecure_tls',
+          type: 'boolean',
+          phase: 'optional',
+          default: false,
+          label: 'Skip TLS',
+        },
+      ],
+    },
+    {
+      name: 'git',
+      fields: [
+        { name: 'url', type: 'url', phase: 'registration', label: 'Repository URL' },
+        {
+          name: 'provider_component_id',
+          type: 'string',
+          phase: 'optional',
+          label: 'Hosting provider',
+          refers_to: ['github', 'gitlab'],
+        },
+      ],
+    },
+  ];
+
+  it('parses the component-type enum and its registration descriptors', () => {
     const r = ComponentTypesSchema.parse({
-      component_types: ['kubernetes', 'prometheus', 'github'],
+      component_types: ['prometheus', 'argocd', 'git'],
       count: 3,
+      descriptors,
     });
     expect(r.component_types).toHaveLength(3);
+    expect(r.descriptors[0].fields[0]).toEqual({
+      name: 'url',
+      type: 'url',
+      phase: 'registration',
+      label: 'Prometheus URL',
+    });
+    // A false default survives the parse: it is a value, not an absence.
+    expect(r.descriptors[1].fields[1].default).toBe(false);
+    expect(r.descriptors[2].fields[1].refers_to).toEqual(['github', 'gitlab']);
   });
 
   it('throws when component_types is missing', () => {
-    expect(() => ComponentTypesSchema.parse({ count: 0 })).toThrow();
+    expect(() => ComponentTypesSchema.parse({ count: 0, descriptors: [] })).toThrow();
+  });
+
+  it('throws when the descriptors are missing', () => {
+    expect(() => ComponentTypesSchema.parse({ component_types: [], count: 0 })).toThrow();
+  });
+
+  it('throws on a field type or phase the dialog cannot render', () => {
+    const withType = (type: string, phase: string) => ({
+      component_types: ['x'],
+      descriptors: [{ name: 'x', fields: [{ name: 'f', type, phase, label: 'F' }] }],
+    });
+    expect(() => ComponentTypesSchema.parse(withType('float', 'optional'))).toThrow();
+    expect(() => ComponentTypesSchema.parse(withType('string', 'someday'))).toThrow();
   });
 });
 

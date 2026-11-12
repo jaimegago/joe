@@ -189,11 +189,14 @@ func TestPromote_StaticBearerWired(t *testing.T) {
 }
 
 // TestPromote_PreservesRoutingConfig proves promotion MERGES the reference into
-// the existing routing config rather than overwriting it.
+// the existing routing config rather than overwriting it. The routing field is
+// github's declared base_url (the GitHub Enterprise Server override); before the
+// registration contract (D-0168) this test used an undeclared `endpoint` key,
+// which registration now refuses.
 func TestPromote_PreservesRoutingConfig(t *testing.T) {
 	f := newLLMAdminFixture(t, true)
 	f.markAdmin("user:alice")
-	registerComponent(t, f, "c-gh", "github", `{"endpoint":"https://github.example.com"}`)
+	registerComponent(t, f, "c-gh", "github", `{"base_url":"https://github.example.com/api/v3"}`)
 
 	w := f.do(http.MethodPost, "/api/v1/components/c-gh/promote",
 		`{"env_var":"GH_TOKEN"}`, "user:alice")
@@ -201,8 +204,8 @@ func TestPromote_PreservesRoutingConfig(t *testing.T) {
 		t.Fatalf("promote: status=%d body=%s; want 200", w.Code, w.Body.String())
 	}
 	cfg := componentConfigMap(t, f, "c-gh")
-	if cfg["endpoint"] != "https://github.example.com" {
-		t.Errorf("routing field 'endpoint' lost on promotion: config=%v", cfg)
+	if cfg["base_url"] != "https://github.example.com/api/v3" {
+		t.Errorf("routing field 'base_url' lost on promotion: config=%v", cfg)
 	}
 	if cfg["env_var"] != "GH_TOKEN" {
 		t.Errorf("reference not written: config=%v", cfg)

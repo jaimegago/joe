@@ -441,7 +441,7 @@ func (t *RegisterComponentTool) Parameters() llm.ParameterSchema {
 			},
 			"config": {
 				Type:        "object",
-				Description: "Source-specific configuration",
+				Description: "Non-credential routing config declared for the type, e.g. {\"url\": \"http://prometheus:9090\"}. Only the type's declared fields are accepted, each in its declared JSON type; credentials and secrets are refused.",
 			},
 		},
 		Required: []string{"name", "type"},
@@ -462,9 +462,11 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 		return nil, fmt.Errorf("unsupported component type %q (allowed: %s)", sourceType, strings.Join(store.AllowedComponentTypes(), ", "))
 	}
 
-	// Config is optional at registration (D-0029): a config-less registration
-	// lands inert. Accept an absent or null config as empty; reject only a
-	// present-but-non-object config.
+	// Config may be absent at registration (D-0029): a config-less registration
+	// lands inert where the type declares no registration-required field (D-0057,
+	// narrowed by D-0168) — the shared contract check below refuses it otherwise.
+	// Accept an absent or null config as empty; reject a present-but-non-object
+	// config.
 	var configBytes json.RawMessage
 	if raw, present := args["config"]; present && raw != nil {
 		config, ok := raw.(map[string]any)
@@ -486,9 +488,9 @@ func (t *RegisterComponentTool) Execute(ctx context.Context, args map[string]any
 		return nil, fmt.Errorf("config must be credential-less: %w", err)
 	}
 
-	// Per-type non-credential shape rules at the SAME shared seam the HTTP create
-	// path uses, so an autonomous registration cannot write a config shape the
-	// operator surface would refuse.
+	// The type's declared registration contract at the SAME shared seam the HTTP
+	// create path uses (D-0168), so an autonomous registration cannot write a
+	// config the operator surface would refuse.
 	if err := componentgov.ValidateRegistrationConfig(sourceType, configBytes); err != nil {
 		return nil, fmt.Errorf("invalid config for type %q: %w", sourceType, err)
 	}

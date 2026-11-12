@@ -8,8 +8,14 @@ registration succeed and land inert: both registration paths now normalize an
 absent or empty config to an empty JSON object (`"{}"`) at the shared
 `componentgov.NormalizeRegistrationConfig` seam, before encryption, leaving the
 `components.config` `NOT NULL` column and the encrypt-at-rest invariant untouched.
-That change is deliberately narrow. The following items surfaced while fixing it
-and are explicitly **not** addressed here.
+Since D-0168 that holds only for a type that declares no registration-required
+field. That change is deliberately narrow. The following items surfaced while
+fixing it and are explicitly **not** addressed here.
+
+A third item — letting an operator supply a non-credential routing locator at
+registration through the UI — was delivered by `registration-routing-locator`
+(D-0168): a declared per-type registration contract, enforced at the shared seam
+and rendered by the Register dialog. It is no longer tracked here.
 
 ## 1. Map registration store-constraint violations to a 4xx/409, not a generic 500
 
@@ -25,24 +31,13 @@ deferred.
 
 ## 2. Create-response fidelity: the handler echoes the pre-stamp struct
 
-`handleCreateComponent` serializes the in-hand `source` pointer
-(`writeJSON(w, http.StatusCreated, source)`) **after** `CreateTx`. In production
-`Components` is the encrypted wrapper, whose `CreateTx` stamps `created_at`,
-`updated_at`, and the default `status` onto an internal **copy** of the component
-(`encryptComponent` returns `copy := *source`), not the original. So the create
-response echoes an empty `status` and zero timestamps even though the persisted
-row is correctly stamped. The fix is to serialize the stamped record (re-read, or
-have the write path stamp the caller's struct), and ideally to return the
-read-model `componentView` for consistency with the GET endpoints. Deferred as a
+`handleCreateComponent` serializes the read-model view of the in-hand `source`
+pointer (`writeJSON(w, http.StatusCreated, newComponentView(source))`) **after**
+`CreateTx`. In production `Components` is the encrypted wrapper, whose `CreateTx`
+stamps `created_at`, `updated_at`, and the default `status` onto an internal
+**copy** of the component (`encryptComponent` returns `copy := *source`), not the
+original. So the create response echoes an empty `status` and zero timestamps
+even though the persisted row is correctly stamped. The fix is to project the
+stamped record (re-read, or have the write path stamp the caller's struct). The
+read-model shape itself already matches the GET endpoints. Deferred as a
 response-shape change with its own test surface.
-
-## 3. The UI cannot supply a non-credential routing locator at registration
-
-D-0029 has registration carry **non-credential routing config** (e.g. an
-endpoint), but the current UI registration payload supplies none, and this fix
-explicitly does **not** add any routing or locator collection — it only makes the
-config-less path persist. Letting an operator provide a non-credential routing
-locator at registration (distinct from the credential reference, which enters
-only at promotion) is a separate design-and-build: it needs a form field, a
-shape/validation contract per component type, and a decision on which types
-accept which routing fields. Tracked here as a pointer; to be handled separately.

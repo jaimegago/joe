@@ -16,18 +16,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { fetchComponentTypes, fetchComponents } from '@/api/components';
+import type { Component, RegistrationConfig, RegistrationField } from '@/api/types';
 
 interface ComponentRegisterFormData {
   id: string;
   type: string;
   name: string;
-  // Non-credential routing config, populated only for the types that need one.
-  // Today that is git alone; every other type submits no config, exactly as
-  // before this field existed.
-  config?: Record<string, string>;
+  // Non-credential routing config: only the fields the selected type's
+  // descriptor declares, each typed as declared. Omitted when no field is set.
+  config?: RegistrationConfig;
 }
 
 interface ComponentRegisterFormProps {
@@ -61,6 +62,48 @@ function slugifyComponentId(name: string): string {
     .replace(/-+$/, '');
 }
 
+// Client-side mirrors of the registration contract's shape rules
+// (componentgov.ValidateRegistrationConfig, D-0168). The server is
+// authoritative; these give immediate feedback and gate submit.
+const INTEGER_PATTERN = /^-?\d+$/;
+const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/./;
+
+function isAbsoluteUrl(value: string): boolean {
+  if (!ABSOLUTE_URL_PATTERN.test(value)) return false;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// fieldError says why a non-empty text value does not have its field's
+// declared shape, or returns null when it does.
+function fieldError(field: RegistrationField, value: string): string | null {
+  if (field.type === 'url' && !isAbsoluteUrl(value)) {
+    return 'Must be an absolute URL, such as https://host:port.';
+  }
+  if (field.type === 'integer' && !INTEGER_PATTERN.test(value)) {
+    return 'Must be a whole number.';
+  }
+  return null;
+}
+
+// fieldHint is the line under a field: its own help, and the adapter's default
+// for an optional field that has one.
+function fieldHint(field: RegistrationField): string | null {
+  const parts: string[] = [];
+  if (field.help) parts.push(field.help);
+  if (field.phase === 'optional' && field.default !== undefined && field.type !== 'boolean') {
+    parts.push(`Defaults to ${String(field.default)}.`);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+const TEXTAREA_CLASS =
+  'flex w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
+
 export function ComponentRegisterForm({
   open,
   onOpenChange,
@@ -76,41 +119,53 @@ export function ComponentRegisterForm({
   // stop touching the ID.
   const [idUnlocked, setIdUnlocked] = useState(false);
   const [idManuallyEdited, setIdManuallyEdited] = useState(false);
-  // git routing config. A repository is unusable without its URL, so it is
-  // required; the hosting provider is an optional discovery declaration.
-  const [repoUrl, setRepoUrl] = useState('');
-  const [providerComponentId, setProviderComponentId] = useState('');
+  // Routing-field values for the selected type, keyed by field name: text for
+  // every field but a boolean's checkbox. Reset whenever the type changes.
+  const [values, setValues] = useState<Record<string, string | boolean>>({});
 
-  // Type selector is populated from the authoritative backend enum — never a
-  // hardcoded TS list. Only fetched once the dialog is opened.
+  // The type selector and every type's fields come from the backend's
+  // registration descriptors — never a hardcoded TS list or a per-type branch.
+  // Only fetched once the dialog is opened.
   const typesQ = useQuery({
     queryKey: ['component-types'],
     queryFn: fetchComponentTypes,
     enabled: open,
   });
-  const types = typesQ.data ?? [];
+  const descriptors = typesQ.data ?? [];
+  const descriptor = descriptors.find((d) => d.name === type);
+  const allFields = descriptor?.fields ?? [];
+  // Fields required at promotion are collected by the Promote form, not here.
+  const fields = allFields.filter((f) => f.phase !== 'promotion');
+  const promotionFields = allFields.filter((f) => f.phase === 'promotion');
+  const needsComponents = fields.some((f) => (f.refers_to ?? []).length > 0);
 
-  const isGit = type === 'git';
-
-  // The hosting-provider dropdown offers the already-registered github and
-  // gitlab components, so the operator picks an existing component rather than
-  // typing an ID. Only fetched when the git branch is actually showing.
+  // A field that names another component offers the registered components of
+  // the types it may refer to, so the operator picks one rather than typing an
+  // ID. Only fetched when such a field is showing.
   const componentsQ = useQuery({
     queryKey: ['components'],
     queryFn: fetchComponents,
-    enabled: open && isGit,
+    enabled: open && needsComponents,
   });
-  const providerComponents = (componentsQ.data ?? []).filter(
-    (c) => c.type === 'github' || c.type === 'gitlab',
-  );
+
+  function textValue(field: RegistrationField): string {
+    const v = values[field.name];
+    return typeof v === 'string' ? v.trim() : '';
+  }
+
+  const fieldsValid = fields.every((f) => {
+    if (f.type === 'boolean') return true;
+    const v = textValue(f);
+    if (v === '') return f.phase !== 'registration';
+    return fieldError(f, v) === null;
+  });
 
   const idValid = isValidComponentId(id);
 
   // Live validity: all three base fields are required by the governed create
-  // endpoint, the ID must satisfy the format rule the backend enforces, and a
-  // git component additionally needs its repository URL.
-  const canSubmit =
-    idValid && type !== '' && name.trim() !== '' && (!isGit || repoUrl.trim() !== '');
+  // endpoint, the ID must satisfy the format rule the backend enforces, and the
+  // type's registration-required fields must be present and well-formed.
+  const canSubmit = idValid && type !== '' && name.trim() !== '' && fieldsValid;
 
   function handleNameChange(value: string) {
     setName(value);
@@ -124,20 +179,152 @@ export function ComponentRegisterForm({
     setIdManuallyEdited(true);
   }
 
+  function handleTypeChange(value: string) {
+    setType(value);
+    setValues({});
+  }
+
+  function setValue(field: string, value: string | boolean) {
+    setValues((prev) => ({ ...prev, [field]: value }));
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    if (!isGit) {
-      // Every non-git type submits exactly the payload it always did: no config.
-      onSubmit({ id, type, name: name.trim() });
-      return;
+    // Each set field is sent in its declared JSON type: a number for an
+    // integer, true for a checked boolean, a trimmed string otherwise. An empty
+    // field is left out — absent and empty mean the same to the server, and the
+    // adapter then uses its default. An unchecked boolean is false, the zero
+    // value, and is likewise left out.
+    const config: RegistrationConfig = {};
+    for (const f of fields) {
+      if (f.type === 'boolean') {
+        if (values[f.name] === true) config[f.name] = true;
+        continue;
+      }
+      const v = textValue(f);
+      if (v === '') continue;
+      config[f.name] = f.type === 'integer' ? Number.parseInt(v, 10) : v;
     }
-    const config: Record<string, string> = { url: repoUrl.trim() };
-    // An empty selection is legal — the repository simply declares no host.
-    if (providerComponentId !== '') {
-      config.provider_component_id = providerComponentId;
+    const base = { id, type, name: name.trim() };
+    // A type with nothing set submits no config at all, exactly the payload a
+    // config-less registration always sent (D-0057).
+    onSubmit(Object.keys(config).length > 0 ? { ...base, config } : base);
+  }
+
+  function renderField(field: RegistrationField) {
+    const inputId = `register-field-${field.name}`;
+    const required = field.phase === 'registration';
+    const label = (
+      <Label htmlFor={inputId}>
+        {field.label}
+        {required ? (
+          <span className="text-destructive" aria-hidden="true">
+            {' '}
+            *
+          </span>
+        ) : (
+          <span className="text-muted-foreground"> (optional)</span>
+        )}
+      </Label>
+    );
+    const hint = fieldHint(field);
+
+    if (field.type === 'boolean') {
+      const checked =
+        values[field.name] === true || (values[field.name] === undefined && field.default === true);
+      return (
+        <div key={field.name} className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={inputId}
+              checked={checked}
+              onCheckedChange={(c) => setValue(field.name, c === true)}
+            />
+            {label}
+          </div>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
+      );
     }
-    onSubmit({ id, type, name: name.trim(), config });
+
+    const refersTo = field.refers_to ?? [];
+    if (refersTo.length > 0) {
+      const candidates = (componentsQ.data ?? []).filter((c: Component) =>
+        refersTo.includes(c.type)
+      );
+      const current = values[field.name];
+      return (
+        <div key={field.name} className="space-y-1">
+          {label}
+          <Select
+            value={typeof current === 'string' ? current : ''}
+            onValueChange={(v) => setValue(field.name, v)}
+          >
+            <SelectTrigger id={inputId}>
+              <SelectValue
+                placeholder={
+                  componentsQ.isLoading
+                    ? 'Loading components…'
+                    : candidates.length === 0
+                      ? `No ${refersTo.join(' or ')} components registered`
+                      : 'None'
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {candidates.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name} ({c.type})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
+      );
+    }
+
+    const raw = values[field.name];
+    const text = typeof raw === 'string' ? raw : '';
+    const error = text.trim() === '' ? null : fieldError(field, text.trim());
+    const placeholder =
+      field.type === 'url'
+        ? field.default !== undefined
+          ? String(field.default)
+          : 'https://…'
+        : '';
+    return (
+      <div key={field.name} className="space-y-1">
+        {label}
+        {field.multiline ? (
+          <textarea
+            id={inputId}
+            value={text}
+            onChange={(e) => setValue(field.name, e.target.value)}
+            rows={4}
+            required={required}
+            aria-invalid={error !== null}
+            className={TEXTAREA_CLASS}
+          />
+        ) : (
+          <Input
+            id={inputId}
+            value={text}
+            onChange={(e) => setValue(field.name, e.target.value)}
+            inputMode={field.type === 'integer' ? 'numeric' : field.type === 'url' ? 'url' : 'text'}
+            placeholder={placeholder}
+            required={required}
+            aria-invalid={error !== null}
+          />
+        )}
+        {error ? (
+          <p className="text-xs text-destructive">{error}</p>
+        ) : (
+          hint && <p className="text-xs text-muted-foreground">{hint}</p>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -200,65 +387,24 @@ export function ComponentRegisterForm({
           </div>
           <div className="space-y-1">
             <Label htmlFor="component-type">Type</Label>
-            <Select value={type} onValueChange={setType}>
+            <Select value={type} onValueChange={handleTypeChange}>
               <SelectTrigger id="component-type">
                 <SelectValue placeholder={typesQ.isLoading ? 'Loading types…' : 'Select a type'} />
               </SelectTrigger>
               <SelectContent>
-                {types.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
+                {descriptors.map((d) => (
+                  <SelectItem key={d.name} value={d.name}>
+                    {d.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          {isGit && (
-            <>
-              <div className="space-y-1">
-                <Label htmlFor="git-url">Repository URL</Label>
-                <Input
-                  id="git-url"
-                  value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  placeholder="https://github.com/org/repo.git"
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Joe clones this repository to a local copy under its own data directory when the
-                  component is armed. No credentials here — a private repository is armed with a
-                  credential reference at promotion.
-                </p>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="git-provider">Hosting provider (optional)</Label>
-                <Select value={providerComponentId} onValueChange={setProviderComponentId}>
-                  <SelectTrigger id="git-provider">
-                    <SelectValue
-                      placeholder={
-                        componentsQ.isLoading
-                          ? 'Loading components…'
-                          : providerComponents.length === 0
-                            ? 'No GitHub or GitLab components registered'
-                            : 'None'
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {providerComponents.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name} ({c.type})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Records which registered GitHub or GitLab component hosts this repository, so its
-                  pull-request surface can be found alongside it. Discovery only — it grants no
-                  access and changes no permissions.
-                </p>
-              </div>
-            </>
+          {fields.map(renderField)}
+          {promotionFields.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Supplied at promotion: {promotionFields.map((f) => f.label).join(', ')}.
+            </p>
           )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

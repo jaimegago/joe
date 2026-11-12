@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jaimegago/joe/internal/audit"
@@ -64,7 +65,9 @@ func TestCreateComponent_RejectsCredentialFields(t *testing.T) {
 	t.Run("accepts/credential-less-routing", func(t *testing.T) {
 		f := newLLMAdminFixture(t, true)
 		f.markAdmin("user:alice")
-		body := `{"id":"c-ok","type":"prometheus","name":"prom","config":{"endpoint":"https://prom.internal","audience":"prom"}}`
+		// Declared routing fields only: since D-0168 an undeclared key is refused
+		// too, so the accepted case carries exactly what the contract declares.
+		body := `{"id":"c-ok","type":"prometheus","name":"prom","config":{"url":"https://prom.internal","org_id":"team-a"}}`
 		w := f.do(http.MethodPost, "/api/v1/components", body, "user:alice")
 		if w.Code != http.StatusCreated {
 			t.Fatalf("credential-less routing config: status=%d body=%s; want 201", w.Code, w.Body.String())
@@ -77,7 +80,11 @@ func TestCreateComponent_RejectsCredentialFields(t *testing.T) {
 
 // TestCreateComponent_AbsentConfigPersistsInert is the regression break-test for
 // the restored D-0029 invariant: a registration payload carrying id + type +
-// name and NO config field must persist and land inert. The bug was that an
+// name and NO config field must persist and land inert — for a type that
+// declares no registration-required field (D-0057, narrowed by D-0168). It used
+// prometheus, which since D-0168 needs its url at registration; github declares
+// only an optional base_url, and its adapter rejects an empty raw config, so it
+// also pins that the normalized {} is what reaches the store. The bug was that an
 // absent config reached the NOT NULL components.config INSERT as a nil blob and
 // surfaced as a generic 500; the suite stayed green only because every other
 // create helper always sent a config (even `{}`). The shared registration seam
@@ -89,7 +96,7 @@ func TestCreateComponent_AbsentConfigPersistsInert(t *testing.T) {
 	f.markAdmin("user:alice")
 
 	// No "config" key at all — the UI registration payload shape that regressed.
-	body := `{"id":"c-noconfig","type":"prometheus","name":"prom"}`
+	body := `{"id":"c-noconfig","type":"github","name":"gh"}`
 	w := f.do(http.MethodPost, "/api/v1/components", body, "user:alice")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("absent-config create: status=%d body=%s; want 201", w.Code, w.Body.String())
@@ -117,6 +124,64 @@ func TestCreateComponent_AbsentConfigPersistsInert(t *testing.T) {
 	if _, armed := armedState(comp.Config); armed {
 		t.Error("config-less registration must land inert (unarmed); armedState reported armed")
 	}
+}
+
+// --- the declared registration contract (D-0168) ---
+
+// TestCreateComponent_EnforcesRegistrationContract proves the governed create
+// path refuses, with a 400 and nothing persisted or audited, each way a config
+// can break its type's declared registration contract.
+func TestCreateComponent_EnforcesRegistrationContract(t *testing.T) {
+	rejected := map[string]struct{ typ, config, want string }{
+		"missing_required_url":   {"prometheus", `{}`, `\"url\" is required`},
+		"absent_config_required": {"prometheus", ``, `\"url\" is required`},
+		"unparseable_url":        {"prometheus", `{"url":"prometheus:9090"}`, "absolute URL"},
+		"undeclared_field":       {"github", `{"endpoint":"https://github.example.com"}`, `\"endpoint\" is not a registration field`},
+		"string_for_integer":     {"newrelic", `{"account_id":"1234567"}`, "must be a JSON integer"},
+		"inline_api_key":         {"prometheus", `{"url":"http://prometheus:9090","api_key":"k"}`, `\"api_key\" is a secret`},
+		"inline_token":           {"splunk", `{"url":"https://splunk:8089","token":"t"}`, `\"token\" is a secret`},
+		"webhook_secret":         {"gitlab", `{"webhook_secret":"s"}`, `\"webhook_secret\" is a secret`},
+		"non_object_config":      {"kubernetes", `["a"]`, "must be a JSON object"},
+	}
+	for name, tc := range rejected {
+		t.Run("rejects/"+name, func(t *testing.T) {
+			f := newLLMAdminFixture(t, true)
+			f.markAdmin("user:alice")
+			body := `{"id":"c-bad","type":"` + tc.typ + `","name":"bad"`
+			if tc.config != "" {
+				body += `,"config":` + tc.config
+			}
+			body += `}`
+			w := f.do(http.MethodPost, "/api/v1/components", body, "user:alice")
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("%s: status=%d body=%s; want 400", name, w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Errorf("%s: body=%s; want it to contain %s", name, w.Body.String(), tc.want)
+			}
+			if got := componentCount(t, f, "c-bad"); got != 0 {
+				t.Errorf("%s: component persisted despite the contract violation (count=%d)", name, got)
+			}
+			if n := f.countAudit(audit.ActionComponentRegister); n != 0 {
+				t.Errorf("%s: audit rows = %d after a rejected create; want 0", name, n)
+			}
+		})
+	}
+
+	t.Run("accepts/typed_values", func(t *testing.T) {
+		f := newLLMAdminFixture(t, true)
+		f.markAdmin("user:alice")
+		body := `{"id":"c-nr","type":"newrelic","name":"nr","config":{"account_id":1234567,"region":"EU"}}`
+		if w := f.do(http.MethodPost, "/api/v1/components", body, "user:alice"); w.Code != http.StatusCreated {
+			t.Fatalf("typed newrelic config: status=%d body=%s; want 201", w.Code, w.Body.String())
+		}
+		cfg := componentConfigMap(t, f, "c-nr")
+		// Stored exactly as sent: the integer stays a JSON number, so the adapter
+		// reads what it expects and nothing downstream has to guess.
+		if cfg["account_id"] != float64(1234567) || cfg["region"] != "EU" {
+			t.Errorf("stored config = %v; want account_id 1234567 (a number) and region EU", cfg)
+		}
+	})
 }
 
 // --- admin gate ---
