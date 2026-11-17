@@ -1,7 +1,6 @@
 Component-resolve bound overrides are documented as narrowing-only and are not clamped
 
-Status: open
-Priority: next
+Status: done — both overrides are clamped, the reported bounds are the enforced ones, and each is pinned by a test that failed against the code as filed; delivered by the joe-pm thread `resolve-bounds-override-clamp`, archived 2026-11-17. The body below is preserved as it stood.
 
 `internal/access/componentresolve.go:126` documents the two override fields on
 `ComponentResolveRequest` as narrowing only:

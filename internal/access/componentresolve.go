@@ -127,6 +127,17 @@ type ComponentResolveRequest struct {
 	// or negative means the package default; a value above the ceiling is
 	// clamped to it, so a caller may narrow an answer and never widen one.
 	// Production passes zero for both.
+	//
+	// Each has its own ceiling. TotalBindingBudget's is MaxResolveBindings.
+	// PerComponentLimit's is the share this call derives from the budget — the
+	// budget divided across the candidates that survived the permit, capped at
+	// graph.DefaultComponentBindingLimit — and NOT that cap alone: clamped only
+	// to the cap, a per-component limit multiplies back out past the budget.
+	//
+	// There is a floor as well. Every candidate carries at least one binding,
+	// so a budget below the candidate count is raised to it. The result reports
+	// the bounds enforced, which is how a caller learns its number was not the
+	// one applied.
 	PerComponentLimit  int
 	TotalBindingBudget int
 }
@@ -145,7 +156,9 @@ type ComponentResolveResult struct {
 	CandidatesTruncated bool
 
 	// MaxCandidates, PerComponentLimit and TotalBindingBudget are the bounds
-	// actually in force for this call.
+	// actually in force for this call — what was enforced, never what was
+	// requested. No set carries more than PerComponentLimit bindings and the
+	// sets together carry no more than TotalBindingBudget, under any request.
 	MaxCandidates      int
 	PerComponentLimit  int
 	TotalBindingBudget int
@@ -200,8 +213,12 @@ type ComponentBindingSet struct {
 // once a permitted candidate exists, so a principal with no grants gets the
 // benign empty answer on a graph-less deployment rather than an error.
 func (a *Accessor) ComponentBindings(ctx context.Context, principal rbac.Principal, req ComponentResolveRequest) (ComponentResolveResult, error) {
+	// The request's budget is a request to narrow. Zero or negative asks for
+	// the default, and a value above the ceiling is clamped to it: unclamped, it
+	// raised every share to the per-component ceiling and restored the product
+	// MaxResolveBindings exists to bound.
 	budget := req.TotalBindingBudget
-	if budget <= 0 {
+	if budget <= 0 || budget > MaxResolveBindings {
 		budget = MaxResolveBindings
 	}
 
@@ -259,6 +276,15 @@ func (a *Accessor) ComponentBindings(ctx context.Context, principal rbac.Princip
 
 	perCandidate := perCandidateShare(budget, len(candidates), req.PerComponentLimit)
 	scan := perCandidate * bindingScanFactor
+
+	// The share has a floor of one binding per candidate, so a budget narrowed
+	// below the candidate count is not the bound this call enforces. Raise it to
+	// the one that is, so the figure reported is the figure applied. This cannot
+	// pass the ceiling: it bites only when the share is one, and the candidates
+	// are bounded by MaxResolveCandidates, which is below MaxResolveBindings.
+	if enforced := perCandidate * len(candidates); enforced > budget {
+		budget = enforced
+	}
 
 	// Pass two.
 	sets := make([]ComponentBindingSet, 0, len(candidates))
@@ -344,14 +370,20 @@ func (a *Accessor) ComponentBindings(ctx context.Context, principal rbac.Princip
 // bindings, indistinguishable at the tool boundary from a component no refresher
 // has drawn an edge for.
 //
-// override lowers the share; it is clamped to the same ceiling as the derived
-// value, so a caller may narrow an answer and never widen one.
+// override lowers the share and cannot raise it: an override above the derived
+// share is clamped to that share, so a caller may narrow an answer and never
+// widen one. The derived share is the ceiling, and the per-component cap alone
+// is not — an override that replaced the share and met only that cap would let
+// one call return candidates × cap bindings, whatever the budget said.
+//
+// The floor of one is the only way the shares can sum past the budget; the
+// caller raises the budget it reports to match.
 func perCandidateShare(budget, candidates, override int) int {
 	share := budget
 	if candidates > 0 {
 		share = budget / candidates
 	}
-	if override > 0 {
+	if override > 0 && override < share {
 		share = override
 	}
 	if share > graph.DefaultComponentBindingLimit {

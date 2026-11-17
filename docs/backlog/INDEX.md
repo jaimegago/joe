@@ -116,7 +116,6 @@ after the move rather than by inspection.
 | [`registry-auth-pair-credential-provider`](registry-auth-pair-credential-provider.md) | Backlog — Registry-auth-pair credential provider (deferred from A003) | deferred from A003 | later |
 | [`remediation-execution`](remediation-execution.md) | Remediation execution — push a fix branch and open a PR | open | later |
 | [`remote-host-diagnostics`](remote-host-diagnostics.md) | Remote host diagnostics — OS-level stats of managed hosts as a future component type | deferred | later |
-| [`resolve-bounds-override-clamp`](resolve-bounds-override-clamp.md) | Component-resolve bound overrides are documented as narrowing-only and are not clamped | open | next |
 | [`review-jobs-orphaned-table`](review-jobs-orphaned-table.md) | review_jobs: orphaned table disposition | open | next |
 | [`run-scoped-commit-pin`](run-scoped-commit-pin.md) | Run-scoped commit pin — one snapshot per run across the three git tools | open | |
 | [`session-content-search`](session-content-search.md) | Backlog — conversational session content-search | deferred | later |
