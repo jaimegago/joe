@@ -23,8 +23,14 @@ binary. For the *why* behind any of these, the pages link back to
 - [Register a Git repository](register-git/) — register a repository by its clone URL and
   promote it with a token reference, or as public.
 - [Register a GitHub, GitLab, or PagerDuty component](register-token-components/) — promote
-  it with a reference to an API token and confirm it is live. Types that need an endpoint
-  URL are registered through the API; see [Components](../components/).
+  it with a reference to an API token and confirm it is live.
+- [Register a Prometheus, Mimir, Loki, Tempo, Jaeger, Alertmanager, or Falco component](register-url-components/)
+  — register a backend by its URL and promote it with a bearer-token reference, or connect
+  it without one if it needs no token.
+- [Register a Grafana, Argo CD, Splunk, Dynatrace, or New Relic component](register-url-token-components/)
+  — register it with its URL or account ID and promote it with a reference to an API token.
+- [Register a Terraform or Envoy component](register-terraform-envoy/) — the two
+  credential-less types: register, assign a zone, and test, with no promotion step.
 - [Chat sessions](chat-sessions/) — create a session, who can read it, and link one
   to an incident.
 - [The incident regime](incidents/) — declare and resolve an incident, and what the

@@ -27,11 +27,10 @@ You choose the method in the Promote dialog. Either way you supply a *reference*
 credential, never the secret itself, and Joe never ingests a human's kubeconfig.
 
 This page covers **Kubernetes only**. Other component types follow the same register →
-promote → activate spine but differ in their credential mechanism. Git, GitHub, GitLab,
-and PagerDuty have their own walkthroughs —
-[Register a Git repository](../register-git/) and
-[Register a GitHub, GitLab, or PagerDuty component](../register-token-components/) — and
-[Connectable systems](../../components/connectable-systems/) covers every type.
+promote → activate spine but differ in their credential mechanism. Each has its own
+walkthrough, linked per type from
+[Connectable systems](../../components/connectable-systems/) and listed under
+[Guides](../).
 
 For *why* the lifecycle is split the way it is — inert registration, governed promotion,
 and credentials held as references rather than stored secrets — see

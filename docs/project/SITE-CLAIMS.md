@@ -834,3 +834,20 @@ and becomes load-bearing.
   `TestRefreshComponent_DegradedStatusWrittenAndCleared`, `TestRefreshCRDSpec_ForbiddenVsMissing`.
 - **Binding note.** The specific excluded-by-`view` set is described as a delta from the `view`
   role, not enumerated (D-0032); the copy points at `view` rather than listing resource types.
+
+---
+
+## Guides — `/guides/register-terraform-envoy/`
+
+### Terraform outputs the state marks sensitive are returned redacted
+
+- **Claim.** Joe redacts the outputs a Terraform state file marks sensitive. The page makes
+  no wider claim: it tells the operator to treat everything else in the file as readable by
+  anyone who may ask Joe about the component.
+- **Mechanism.** The Terraform adapter's `Outputs` replaces the value of every output whose
+  `sensitive` flag is set with a fixed redaction marker before returning it
+  (`internal/adapters/iac/terraform`).
+- **Pinning tests.** `TestAdapter_Outputs`.
+- **Binding note.** Mechanism-bound to the page's caution. Resource attributes are redacted
+  only where the state lists them by plain name under `sensitive_attributes`
+  (`TestAdapter_Resources_SensitiveRedaction`); the page deliberately does not claim that.

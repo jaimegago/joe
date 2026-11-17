@@ -29,9 +29,11 @@ self-managed GitLab, or PagerDuty's EU service region, fill in the optional endp
 the Register dialog shows for the type — `base_url` for GitHub and GitLab, `api_url` for
 PagerDuty.
 
-Other static-credential types — Prometheus, Grafana, Argo CD, and the rest — need an
-endpoint URL at registration, which the Register dialog collects as a required field; see
-[Connectable systems](../../components/connectable-systems/) for each type's fields. For a
+Other types need a locator at registration — a URL, an account ID, or a file path — which
+the Register dialog collects as a required field. They have their own walkthroughs:
+[Prometheus, Mimir, Loki, Tempo, Jaeger, Alertmanager, and Falco](../register-url-components/);
+[Grafana, Argo CD, Splunk, Dynatrace, and New Relic](../register-url-token-components/);
+and the credential-less [Terraform and Envoy](../register-terraform-envoy/). For a
 Git repository, see
 [Register a Git repository](../register-git/); for a Kubernetes cluster, see
 [Register a Kubernetes component](../register-kubernetes/).

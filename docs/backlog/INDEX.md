@@ -62,7 +62,7 @@ after the move rather than by inspection.
 | [`component-delete-graph-orphans`](component-delete-graph-orphans.md) | Component-delete graph-orphans — deferred residue (cross-component edges, write-only Edge.ComponentID, refresher UI visibility, other FK-less component_id tables) | open | later |
 | [`component-description-field`](component-description-field.md) | Component description field — operator-declared semantics on the component record | open | later |
 | [`component-name-rename`](component-name-rename.md) | Component Name rename — no mutation path exists | open | |
-| [`component-registration-guide`](component-registration-guide.md) | Component registration guide — UI-driven public how-to | in-progress | now |
+| [`component-registration-guide`](component-registration-guide.md) | Component registration guides — standing watch items | open | later |
 | [`component-type-contract`](component-type-contract.md) | Per-type component contract — one deterministic package per component type | open | later |
 | [`components-page-restructure`](components-page-restructure.md) | Components page restructure — deferred remainder | open | later |
 | [`console-brand-tokens`](console-brand-tokens.md) | Console brand token layer | open | later |
