@@ -69,7 +69,6 @@ after the move rather than by inspection.
 | [`crd-gvr-resolution`](crd-gvr-resolution.md) | CRD GVR resolution in the on-demand core tools (deferred from crd-gvr-resolution / D-0094) | open | later |
 | [`credential-stderr-surface-teardown`](credential-stderr-surface-teardown.md) | Backlog — Tear down the vestigial credential-stderr surface | open | later |
 | [`cross-incident-relink`](cross-incident-relink.md) | Backlog — Attach a former (resolved) incident master as a participant of a new incident | deferred | later |
-| [`d0155-disclosure-record`](d0155-disclosure-record.md) | D-0155 (j) misdescribes which residual bounds reach the caller | open | next |
 | [`datastore-uri-credential-provider`](datastore-uri-credential-provider.md) | Backlog — Datastore URI credential provider (deferred from A003) | deferred from A003 | later |
 | [`db-retention-story`](db-retention-story.md) | Backlog — Whole-database retention story (audit rotation, LLM-usage/review-jobs pruning, legacy-session disposition, DB-size observability) | open | later |
 | [`default-model-constants`](default-model-constants.md) | Per-provider default model constants will go stale like the version literals did | open | later |
