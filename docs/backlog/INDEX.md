@@ -75,7 +75,6 @@ after the move rather than by inspection.
 | [`default-model-constants`](default-model-constants.md) | Per-provider default model constants will go stale like the version literals did | open | later |
 | [`demo-runbooks-e2e`](demo-runbooks-e2e.md) | Demo runbooks as E2E tests | open | later |
 | [`denial-feedback-popup`](denial-feedback-popup.md) | Denial-feedback pop-up: a reactive notification when a user action is refused | deferred | later |
-| [`dev-skill-test-pinning`](dev-skill-test-pinning.md) | Strengthen dev standard skill on regression tests and pinning | open | next |
 | [`docs-public-refit`](docs-public-refit.md) | Public docs refit — deferred follow-ups | open | later |
 | [`docwrite-dead-code`](docwrite-dead-code.md) | Git adapter docwrite.go — unreachable residue of the knowledge-store deletion | open | later |
 | [`edge-type-literal-consolidation`](edge-type-literal-consolidation.md) | Edge-type literal consolidation and constraining graph_edges.relation | open | later |
