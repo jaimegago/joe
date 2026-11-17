@@ -1,6 +1,6 @@
 D-0155 (j) misdescribes which residual bounds reach the caller
 
-Status: open
+Status: done — D-0155 (j) corrected in place (d0155-disclosure-record)
 Priority: next
 
 `docs/project/DECISIONS.md`, in the D-0155 entry, states that the two residual

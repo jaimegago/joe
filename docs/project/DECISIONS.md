@@ -619,7 +619,8 @@ unit of work that produced it.
 
 - Date: 2026-08-17
 - Status: accepted (implemented)
-- Session: component-resolution-tool, amended by resolve-bounds-before-filter
+- Session: component-resolution-tool, amended by resolve-bounds-before-filter;
+  (j)'s account of the residual bounds corrected by d0155-disclosure-record
 - Decision: ten parts. (a)–(d) are the tool; (e)–(g) are what had to be built or
   read to make it honest; (h)–(i) correct the item and the order that produced it;
   (j) is where the bounds sit relative to the permit, which the governance-floor
@@ -800,13 +801,53 @@ unit of work that produced it.
      rather than first-come, because a weakly-ranked candidate handed empty
      evidence is indistinguishable at the tool boundary from one no refresher has
      drawn an edge for. All three bounds in force are reported to the caller.
-     **The two residual work bounds are NOT reported to the caller, and that is
-     the second limb of the rule rather than an omission.** Both are counted
-     before the peer filter, so either one read beside a post-filter count
-     discloses the difference. They are recorded on the per-call audit row —
-     `matches_bounded`, `evidence_bounded` — which is where the operator side of
-     every other resolve distinction already lives, per (c) and (d). A
-     consequence worth stating: the tool description no longer claims empty
+     **Of the two residual work bounds, one is NOT reported to the caller and one
+     IS — corrected 2026-11-17 (`d0155-disclosure-record`).** As ratified, this
+     paragraph said neither was reported and called that the second limb of the
+     rule. That was false of `matches_bounded` from `d741e06`, the commit that
+     landed the paragraph and the flag together. The code was right and this
+     record was wrong, so the correction is to the record alone.
+     The match bound (`componentresolve.MaxMatchScan`) is spent before the
+     per-component permit, and the evidence scan bound (the per-candidate share
+     times `bindingScanFactor`) before the peer filter. Both are recorded on the
+     per-call audit row — `matches_bounded`, a boolean, and `evidence_bounded`,
+     a count of the candidates whose evidence only the scan bound can have
+     shortened — which is where the operator side of every other resolve
+     distinction already lives, per (c) and (d).
+     **`evidence_bounded` is audit-only, and that is the second limb of the
+     rule rather than an omission.** It is counted over raw graph rows, on the
+     governed side: read beside the post-filter `binding_count` it would
+     disclose how much of a readable component's graph reaches components
+     outside the grant. No type that leaves `internal/access` carries it.
+     **`matches_bounded` is ALSO returned to the caller, as `matches_truncated`.**
+     The one boolean `Match` returns is handed to the accessor for the audit row
+     and set on `Resolution.MatchesTruncated` (`ResolveComponents`,
+     `internal/api/inproc_client.go`). `resolve_component` emits it on every
+     answer, the empty one included, and its description tells the model what
+     the flag means and to narrow the phrase when it is set
+     (`internal/tools/core/resolvecomponent.go`).
+     **That disclosure does not rest on this rule. It rests on two facts about
+     the tree,** stated until now only in the Go doc on
+     `Resolution.MatchesTruncated`. First, the registry read behind matching is
+     ungoverned: `ResolveComponents` matches over `c.components.List(ctx)`, the
+     same call `ListComponents` returns whole, with no principal and no
+     accessor, and `list_components` hands back every component's id, type and
+     name, unbounded. Second, `Match` is deterministic on name and type: whether
+     it stops at the bound is a function of the phrase, the optional type
+     filter, and each component's name and type, the id only breaking ordering
+     ties. So the flag tells a caller nothing it cannot already compute from
+     `list_components`.
+     **THE TRIGGER: governing `Store.Components.List` turns `matches_truncated`
+     into a leak the moment it lands** — precisely, the moment a caller can no
+     longer read the registry whole while the match step still ranks all of it.
+     From then the flag is a pre-filter fact reported beside post-filter counts,
+     which is the pairing this rule exists to forbid. On an empty answer it
+     tells matched-but-not-permitted from nothing-matched, which (c) keeps
+     identical; and with `candidates_truncated` unset every scanned id was
+     evaluated, so `MaxMatchScan` less `candidate_count` is how many matched
+     components sit outside the grant. What becomes of the flag is that change's
+     decision and is not taken here: naming the trigger is not arming it.
+     A consequence worth stating: the tool description no longer claims empty
      bindings mean no edge exists, only that none the caller may see does.
 - Basis: `internal/componentresolve/` (matcher and result types, with
   `resolve_test.go` pinning kinds, ranking determinism against registry order,
@@ -830,6 +871,14 @@ unit of work that produced it.
   lacked. The last reads the row back from the `audit_log` table the real insert
   wrote to, so the new reason is exercised against migration 015's constraints
   rather than against a fake.
+  For the 2026-11-17 correction to (j), read against the tree at `ba47597`:
+  `internal/api/inproc_client.go` (`ListComponents`, `ResolveComponents`);
+  `internal/componentresolve/resolve.go` (`Match`, `MaxMatchScan`, the doc on
+  `Resolution.MatchesTruncated`); `internal/access/componentresolve.go`
+  (`resolveOutcome`, `auditComponentResolveOutcome`, `ComponentResolveResult`);
+  `internal/tools/core/resolvecomponent.go` and `listcomponents.go`; and
+  `TestResolveComponentTool_Execute_ShapesCandidates`, which pins
+  `matches_truncated` in the caller's answer.
 - Supersedes: nothing. Closes `docs/backlog/component-resolution-tool.md`, which
   is archived to `done/` unedited apart from its Status line — an archive
   rewritten to agree with the present destroys the trail it exists to keep, so
