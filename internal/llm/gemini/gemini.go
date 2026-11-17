@@ -395,7 +395,9 @@ func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo
 
 		switch apiErr.Code {
 		case 404:
-			// Model not found - fetch available models from API
+			// Model not found. The API's own message leads: it can name the
+			// cause and the fix (a retired model and its replacement), and the
+			// models list below cannot — see listAvailableModels.
 			modelName := c.model
 
 			// Check if they're using a Claude model by mistake
@@ -407,12 +409,12 @@ func (c *Client) enhanceErrorWithDebug(ctx context.Context, err error, debugInfo
 			// Try to fetch available models from API (use passed context)
 			availableModels := c.listAvailableModels(ctx)
 			if len(availableModels) > 0 {
-				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider.%s\n\nAvailable models:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=%s",
-					modelName, hint, strings.Join(availableModels, "\n  - "), availableModels[0])
+				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider: %s%s\n\nAvailable models:\n  - %s\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=%s",
+					modelName, errDetails, hint, strings.Join(availableModels, "\n  - "), availableModels[0])
 			} else {
 				// Fallback if API call fails - provide generic message
-				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider.%s\n\nCouldn't fetch available models from API.\nCheck https://ai.google.dev/gemini-api/docs/models/gemini for current model list.\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=<valid-model-name>",
-					modelName, hint)
+				enhancedErr = fmt.Errorf("model '%s' not found for Gemini provider: %s%s\n\nCouldn't fetch available models from API.\nCheck https://ai.google.dev/gemini-api/docs/models/gemini for current model list.\n\nUpdate your config file or use:\n  export JOE_LLM_MODEL=<valid-model-name>",
+					modelName, errDetails, hint)
 			}
 		case 400:
 			// Check for common issues
