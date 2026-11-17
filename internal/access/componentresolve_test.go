@@ -397,6 +397,165 @@ func TestComponentBindings_TotalBindingBudgetIsBoundedAndReported(t *testing.T) 
 	}
 }
 
+// saturatedResolveFixture builds n candidates the principal may read, each
+// carrying more visible bindings than any per-candidate bound can return. Every
+// bound a call enforces is therefore reached, so what comes back IS the bound
+// enforced and can be read beside the bound reported.
+func saturatedResolveFixture(t *testing.T, n int) (*access.Accessor, []string) {
+	t.Helper()
+	byComponent := map[string][]graph.ComponentBinding{}
+	ids := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("c-%02d", i)
+		ids = append(ids, id)
+		rows := make([]graph.ComponentBinding, 0, graph.DefaultComponentBindingLimit*2+1)
+		for j := 0; j <= graph.DefaultComponentBindingLimit*2; j++ {
+			rows = append(rows, binding(fmt.Sprintf("svc:%02d-%03d", i, j), graph.RelationMetricsIn, "c-prom"))
+		}
+		byComponent[id] = rows
+	}
+	acc, _ := resolveFixture(t, &bindingGraph{byComponent: byComponent},
+		append(append([]string{}, ids...), "c-prom")...)
+	return acc, ids
+}
+
+// bindingTotal is how many bindings one answer carries across every candidate.
+func bindingTotal(res access.ComponentResolveResult) int {
+	total := 0
+	for _, s := range res.Sets {
+		total += len(s.Bindings)
+	}
+	return total
+}
+
+// TestComponentBindings_PerComponentOverrideAboveTheShareDoesNotWiden pins the
+// narrowing-only contract on PerComponentLimit. The override used to REPLACE the
+// derived share, so the only ceiling left was the per-component one: 25
+// candidates at 50 each is 1250 bindings from one call, the unbounded product
+// the total budget exists to prevent, reached through the field documented as
+// unable to widen an answer.
+func TestComponentBindings_PerComponentOverrideAboveTheShareDoesNotWiden(t *testing.T) {
+	acc, ids := saturatedResolveFixture(t, access.MaxResolveCandidates)
+	share := access.MaxResolveBindings / access.MaxResolveCandidates
+
+	res := resolveWith(t, acc, access.ComponentResolveRequest{
+		ComponentIDs: ids, PerComponentLimit: graph.DefaultComponentBindingLimit,
+	})
+	for _, s := range res.Sets {
+		if len(s.Bindings) > share {
+			t.Errorf("candidate %s carries %d bindings, over the derived share of %d: "+
+				"an override above the share must be clamped to it, not replace it",
+				s.ComponentID, len(s.Bindings), share)
+		}
+	}
+	if total := bindingTotal(res); total > access.MaxResolveBindings {
+		t.Errorf("one call returned %d bindings, over the total budget of %d: "+
+			"a per-component override must not widen the answer", total, access.MaxResolveBindings)
+	}
+}
+
+// TestComponentBindings_TotalBudgetAboveTheCeilingDoesNotWiden pins the same
+// contract on TotalBindingBudget, which carried no upper clamp at all: a budget
+// above MaxResolveBindings raised every candidate's share to the per-component
+// ceiling.
+func TestComponentBindings_TotalBudgetAboveTheCeilingDoesNotWiden(t *testing.T) {
+	acc, ids := saturatedResolveFixture(t, access.MaxResolveCandidates)
+	share := access.MaxResolveBindings / access.MaxResolveCandidates
+
+	res := resolveWith(t, acc, access.ComponentResolveRequest{
+		ComponentIDs: ids, TotalBindingBudget: access.MaxResolveBindings * 20,
+	})
+	for _, s := range res.Sets {
+		if len(s.Bindings) > share {
+			t.Errorf("candidate %s carries %d bindings, over the derived share of %d: "+
+				"a budget above the ceiling must be clamped to it",
+				s.ComponentID, len(s.Bindings), share)
+		}
+	}
+	if total := bindingTotal(res); total > access.MaxResolveBindings {
+		t.Errorf("one call returned %d bindings, over the total budget ceiling of %d",
+			total, access.MaxResolveBindings)
+	}
+}
+
+// TestComponentBindings_ReportedBoundsAreTheBoundsEnforced is the assertion the
+// result's doc makes: the three bound fields are "the bounds actually in force
+// for this call". Each case runs against a fixture that saturates every bound,
+// so the enforced bound is observable — it is what came back — and is compared
+// with the reported one rather than with the request.
+//
+// The last case is the floor rather than a ceiling. Every candidate carries at
+// least one binding, so a budget narrowed below the candidate count cannot be
+// honoured as asked; the budget reported is the one enforced, not the one
+// requested.
+func TestComponentBindings_ReportedBoundsAreTheBoundsEnforced(t *testing.T) {
+	const (
+		ceiling = access.MaxResolveBindings
+		wide    = access.MaxResolveCandidates
+		share   = access.MaxResolveBindings / access.MaxResolveCandidates
+	)
+	cases := []struct {
+		name       string
+		candidates int
+		perLimit   int
+		budget     int
+		wantPer    int
+		wantBudget int
+	}{
+		{"production defaults", wide, 0, 0, share, ceiling},
+		{"per-component override above the share", wide, graph.DefaultComponentBindingLimit, 0, share, ceiling},
+		{"total budget above the ceiling", wide, 0, ceiling * 20, share, ceiling},
+		{"both above", wide, graph.DefaultComponentBindingLimit * 4, ceiling * 20, share, ceiling},
+		{"single candidate, budget above the ceiling", 1, 0, ceiling * 20, graph.DefaultComponentBindingLimit, ceiling},
+		{"per-component override narrows", wide, 3, 0, 3, ceiling},
+		{"total budget narrows", wide, 0, 100, 100 / wide, 100},
+		{"total budget below one binding per candidate", 10, 0, 5, 1, 10},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			acc, ids := saturatedResolveFixture(t, tc.candidates)
+			res := resolveWith(t, acc, access.ComponentResolveRequest{
+				ComponentIDs: ids, PerComponentLimit: tc.perLimit, TotalBindingBudget: tc.budget,
+			})
+
+			if len(res.Sets) != tc.candidates {
+				t.Fatalf("got %d candidates, want %d", len(res.Sets), tc.candidates)
+			}
+			if res.MaxCandidates != access.MaxResolveCandidates || len(res.Sets) > res.MaxCandidates {
+				t.Errorf("MaxCandidates = %d beside %d candidates, want the bound in force (%d)",
+					res.MaxCandidates, len(res.Sets), access.MaxResolveCandidates)
+			}
+
+			// Enforced against reported. Every candidate has more visible
+			// bindings than any share, so each carries exactly the share that
+			// was enforced on it.
+			for _, s := range res.Sets {
+				if len(s.Bindings) != res.PerComponentLimit {
+					t.Errorf("candidate %s carries %d bindings beside a reported PerComponentLimit of %d",
+						s.ComponentID, len(s.Bindings), res.PerComponentLimit)
+				}
+			}
+			if total := bindingTotal(res); total > res.TotalBindingBudget {
+				t.Errorf("one call returned %d bindings beside a reported TotalBindingBudget of %d",
+					total, res.TotalBindingBudget)
+			}
+
+			// Reported against the contract: neither figure is the caller's
+			// number where the caller's number was not what was enforced.
+			if res.PerComponentLimit != tc.wantPer {
+				t.Errorf("PerComponentLimit = %d, want %d", res.PerComponentLimit, tc.wantPer)
+			}
+			if res.TotalBindingBudget != tc.wantBudget {
+				t.Errorf("TotalBindingBudget = %d, want %d", res.TotalBindingBudget, tc.wantBudget)
+			}
+			if res.TotalBindingBudget > access.MaxResolveBindings {
+				t.Errorf("TotalBindingBudget = %d, over the ceiling of %d",
+					res.TotalBindingBudget, access.MaxResolveBindings)
+			}
+		})
+	}
+}
+
 // TestComponentBindings_AuditRecordsWhichEmptyCaseOccurred is the assertion the
 // unhappy-path decision rests on. The CALLER cannot tell "nothing matched" from
 // "nothing you may see matched" — both are an empty result. The OPERATOR can,
