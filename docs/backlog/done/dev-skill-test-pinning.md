@@ -1,6 +1,9 @@
 Strengthen dev standard skill on regression tests and pinning
-Status: open
-Priority: next
+Status: done — delivered in `jaimegago/agent-skills` at `78dc574` (dev-standards `1.2.0`),
+which adds both standards below to `dev-standards/SKILL.md`. Archived by the joe-pm thread
+`dev-skill-test-pinning`. The body is preserved as it stood; the path it names,
+`~/.claude/skills/dev-standards/`, no longer exists, and the skill is `dev-standards/SKILL.md`
+in that repository. No tag carries the commit yet, so no consumer's pin includes it.
 
 Update the **dev-standards** skill (`~/.claude/skills/dev-standards/`) to state a pinning standard, using the findings of sessions `demo-bugfix-pins` and `rbac-engine-split` as the evidence. **The skill lives in the agent skills repo, [`jaimegago/agent-skills`](https://github.com/jaimegago/agent-skills), not this one — this file is a cross-repo pointer only.** Nothing here is actionable inside `joe/`; the change lands in the skills repo and this item is closed from there.
 
