@@ -75,12 +75,22 @@ const componentResolveSubkind = "component_resolve"
 // is a prefix of that principal's own ranking rather than a filtered prefix of
 // everyone's. The two WORK bounds behind them — componentresolve.MaxMatchScan
 // and bindingScanFactor — are applied before it, necessarily, because filtering
-// costs a permit per row and unbounded filtering is unbounded work. Neither is
-// reported to the caller, because a count derived before the filter and read
-// beside one derived after it discloses the difference: how much of this
-// component's graph reaches components the grant does not cover. They are
-// recorded on the per-call audit row instead, which is where the operator side
-// of every other resolve distinction already lives.
+// costs a permit per row and unbounded filtering is unbounded work. Both are
+// recorded on the per-call audit row, which is where the operator side of every
+// other resolve distinction already lives. They part ways at the caller.
+//
+// The evidence scan bound is NOT reported to the caller, because a count
+// derived before the peer filter and read beside one derived after it discloses
+// the difference: how much of this component's graph reaches components the
+// grant does not cover.
+//
+// The match bound IS reported, as matches_truncated — set by the client that
+// ran the match, not by this package. That is safe for a reason outside this
+// rule: the registry the match step ranks is ungoverned, list_components
+// returns it whole to any caller, and Match is deterministic on name and type,
+// so the flag says nothing a caller cannot already compute. It stops being safe
+// once that read is governed while matching still ranks the whole registry;
+// D-0155 (j) names that trigger.
 const (
 	// MaxResolveCandidates is the OUTPUT bound on candidates: how many
 	// permitted components one call returns. Applied after the permit, over the
@@ -396,10 +406,12 @@ func perCandidateShare(budget, candidates, override int) int {
 }
 
 // resolveOutcome is what one resolve call has to say about itself: how far it
-// got, and which of its bounds bit. The three bound flags are here and not in
-// the caller's answer because that is the whole asymmetry this type exists for —
-// a bound applied before the peer filter is a fact about components outside the
-// grant, so the operator gets it and the caller does not.
+// got, and which of its bounds bit. All three bound flags go on the audit row.
+// Two also reach the caller: candidatesBounded as CandidatesTruncated, a claim
+// about the principal's own ranking, and matchesBounded as matches_truncated,
+// which the client sets from the same match result. evidenceBounded reaches the
+// operator only, and that is the asymmetry this type exists for — a bound
+// applied before the peer filter is a fact about components outside the grant.
 type resolveOutcome struct {
 	// matched is how many ids the call was handed; permitted is how many
 	// candidates it returned.
