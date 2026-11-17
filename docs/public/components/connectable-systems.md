@@ -40,29 +40,29 @@ connectivity test confirms it — with no daemon restart.
 
 | System | Type | Credential mechanism | Routing config | Web UI |
 | --- | --- | --- | --- | --- |
-| Prometheus | `prometheus` | static / env var (`JOE_PROMETHEUS_<LABEL>`) | `url` (`org_id`) | yes |
-| Mimir | `mimir` | static / env var (`JOE_MIMIR_<LABEL>`) | `url` (`org_id`) | yes |
-| Loki | `loki` | static / env var (`JOE_LOKI_<LABEL>`) | `url` (`org_id`) | yes |
-| Tempo | `tempo` | static / env var (`JOE_TEMPO_<LABEL>`) | `url` (`org_id`) | yes |
-| Jaeger | `jaeger` | static / env var (`JOE_JAEGER_<LABEL>`) | `url` | yes |
-| Splunk | `splunk` | static / env var (`JOE_SPLUNK_<LABEL>`) | `url` (`index`) | yes |
-| Dynatrace | `dynatrace` | static / env var (`JOE_DYNATRACE_<LABEL>`) | `url` | yes |
-| New Relic | `newrelic` | static / env var (`JOE_NEWRELIC_<LABEL>`) | `account_id`, an integer (`region`) | yes |
+| Prometheus | `prometheus` | static / env var (`JOE_PROMETHEUS_<LABEL>`) | `url` (`org_id`) | yes — [guide](../../guides/register-url-components/) |
+| Mimir | `mimir` | static / env var (`JOE_MIMIR_<LABEL>`) | `url` (`org_id`) | yes — [guide](../../guides/register-url-components/) |
+| Loki | `loki` | static / env var (`JOE_LOKI_<LABEL>`) | `url` (`org_id`) | yes — [guide](../../guides/register-url-components/) |
+| Tempo | `tempo` | static / env var (`JOE_TEMPO_<LABEL>`) | `url` (`org_id`) | yes — [guide](../../guides/register-url-components/) |
+| Jaeger | `jaeger` | static / env var (`JOE_JAEGER_<LABEL>`) | `url` | yes — [guide](../../guides/register-url-components/) |
+| Splunk | `splunk` | static / env var (`JOE_SPLUNK_<LABEL>`) | `url` (`index`) | yes — [guide](../../guides/register-url-token-components/) |
+| Dynatrace | `dynatrace` | static / env var (`JOE_DYNATRACE_<LABEL>`) | `url` | yes — [guide](../../guides/register-url-token-components/) |
+| New Relic | `newrelic` | static / env var (`JOE_NEWRELIC_<LABEL>`) | `account_id`, an integer (`region`) | yes — [guide](../../guides/register-url-token-components/) |
 
 ### Alerting
 
 | System | Type | Credential mechanism | Routing config | Web UI |
 | --- | --- | --- | --- | --- |
-| Alertmanager | `alertmanager` | static / env var (`JOE_ALERTMANAGER_<LABEL>`) | `url` | yes |
+| Alertmanager | `alertmanager` | static / env var (`JOE_ALERTMANAGER_<LABEL>`) | `url` | yes — [guide](../../guides/register-url-components/) |
 | PagerDuty | `pagerduty` | static / env var (`JOE_PAGERDUTY_<LABEL>`) | — (`api_url`, for the EU service region) | yes — [guide](../../guides/register-token-components/) |
-| Grafana | `grafana` | static / env var (`JOE_GRAFANA_<LABEL>`) | `url` | yes |
+| Grafana | `grafana` | static / env var (`JOE_GRAFANA_<LABEL>`) | `url` | yes — [guide](../../guides/register-url-token-components/) |
 
 ### GitOps and security
 
 | System | Type | Credential mechanism | Routing config | Web UI |
 | --- | --- | --- | --- | --- |
-| Argo CD | `argocd` | static / env var (`JOE_ARGOCD_<LABEL>`) | `url` (`insecure_tls`) | yes |
-| Falco | `falco` | static / env var (`JOE_FALCO_<LABEL>`) | `url` | yes |
+| Argo CD | `argocd` | static / env var (`JOE_ARGOCD_<LABEL>`) | `url` (`insecure_tls`) | yes — [guide](../../guides/register-url-token-components/) |
+| Falco | `falco` | static / env var (`JOE_FALCO_<LABEL>`) | `url` | yes — [guide](../../guides/register-url-components/) |
 
 ### Credential-less systems
 
@@ -71,5 +71,5 @@ routing config, run the connectivity test, and they function.
 
 | System | Type | Credential mechanism | Routing config | Web UI |
 | --- | --- | --- | --- | --- |
-| Terraform | `terraform` | none — reads local state | `state_path` | yes |
-| Envoy | `envoy` | none — unauthenticated admin API | `url` (`timeout_ms`) | yes |
+| Terraform | `terraform` | none — reads local state | `state_path` | yes — [guide](../../guides/register-terraform-envoy/) |
+| Envoy | `envoy` | none — unauthenticated admin API | `url` (`timeout_ms`) | yes — [guide](../../guides/register-terraform-envoy/) |

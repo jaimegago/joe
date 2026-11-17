@@ -24,8 +24,8 @@ mechanism of each system you can connect today.
 
 The web UI walks the same flow for every type: its Register dialog renders each type's
 routing fields and marks the ones registration requires, such as a Prometheus or Grafana
-`url`. Step-by-step guides cover Kubernetes, Git, GitHub, GitLab, and PagerDuty — see
-[Guides](../guides/).
+`url`. Step-by-step guides cover every type listed in
+[Connectable systems](connectable-systems/) — see [Guides](../guides/).
 
 For the *why* behind the two-step lifecycle, read
 [The component lifecycle](../concepts/component-lifecycle/). For the configuration

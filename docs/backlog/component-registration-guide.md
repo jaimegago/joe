@@ -1,66 +1,32 @@
-# Component registration guide — UI-driven public how-to
-Status: in-progress
-Priority: now
+# Component registration guides — standing watch items
+Status: open
+Priority: later
 
-## What has shipped
+The registration how-tos are written: every registrable type has a UI walkthrough under
+`docs/public/guides/`. No page work remains here. What remains is a list of facts the
+pages state about the product as it is, each of which obliges a page revision if the
+product changes. Nothing below is work until its trigger fires.
 
-- `docs/public/guides/register-kubernetes.md` (D-0059) — Kubernetes.
-- `docs/public/guides/register-git.md` — `git`: repository URL at registration, then a
-  static `JOE_GIT_<LABEL>` reference or the explicit no-credential arm (D-0150).
-- `docs/public/guides/register-token-components.md` — `github`, `gitlab`, `pagerduty`,
-  grouped on one page because they differ only in the env-var prefix and what the token
-  is. Covers the static promotion form's candidate picker and the compose-a-label
-  fallback with its not-currently-set warning.
+## The pages
 
-All three follow D-0119: promote connects, and Test Connection is a confirmation and
-retry step, not the activation step. None carries screenshots or placeholders (D-0148).
+- `register-kubernetes.md` (D-0059) — `kubernetes`.
+- `register-git.md` — `git` (D-0150).
+- `register-token-components.md` — `github`, `gitlab`, `pagerduty`.
+- `register-url-components.md` — `prometheus`, `mimir`, `loki`, `tempo`, `jaeger`,
+  `alertmanager`, `falco`: a required `url`, and a bearer token the adapter treats as
+  optional.
+- `register-url-token-components.md` — `grafana`, `argocd`, `splunk`, `dynatrace`,
+  `newrelic`: a required `url` (for `newrelic`, the integer `account_id`), and a token the
+  adapter refuses to connect without.
+- `register-terraform-envoy.md` — the credential-less `terraform` (`state_path`) and
+  `envoy` (`url`), with no promotion step.
 
-The thread that shipped the last two (`component-registration-guide`, 2026-10-11) also
-fixed a defect that had made them impossible to write: eight adapters (`github`,
-`gitlab`, `pagerduty`, `grafana`, `argocd`, `splunk`, `dynatrace`, `newrelic`) required
-their inline credential field in `ParseConfig`, before the armed reference was resolved,
-so every promoted component of those types failed to connect with `token is required` /
-`api_key is required`. The check now runs in `Connect`, after resolution, pinned per
-adapter by `TestConnect_PromotedReferenceOnly` (`ResolvesEnvVar` for `github` and
-`gitlab`, which no longer carry a placeholder token).
-
-The "boot-config-only" category this item used to describe is gone: since
-`adapter-dispatch-consolidation` every type is built by `factory.New`, so all of them
-come live at runtime. `docs/public/components/` was corrected to match.
-
-## Remaining work
-
-Every other documentable type needs a non-credential routing field at registration, and
-the Register dialog collects it: since D-0168 (`registration-routing-locator`) the dialog
-renders each type's declared registration contract from `GET /api/v1/component-types`,
-marks the fields registration requires, and refuses a malformed value before submit.
-
-- `url`: `prometheus`, `mimir`, `loki`, `tempo`, `jaeger`, `alertmanager`, `grafana`,
-  `argocd`, `falco`, `splunk`, `dynatrace`, and the credential-less `envoy`.
-- `account_id`, an integer: `newrelic`.
-- `state_path`: the credential-less `terraform`.
-
-Add the static types to `register-token-components.md` or as sibling pages, and give
-`terraform` and `envoy` a page whose happy path has no promotion step. Each page that
-covers one of these types says, in one line, that a component registered before D-0168
-without its locator is fixed by deleting it, registering it again, and re-assigning its
-security zone — `connectable-systems.md` already carries that line.
-
-The endpoint override for GitHub Enterprise Server, self-managed GitLab, and PagerDuty's
-EU region (`base_url` / `api_url`) is an optional field in the dialog, and
-`register-token-components.md` was updated for it in D-0168's pull request.
-
-## Screenshots
-
-Every registration how-to ships with no screenshots, by decision (D-0148): manual capture
-was rejected. The only sanctioned future path is deterministic capture from the
-joe-oasis-e2e Playwright harness, regenerated per release as a build artifact — see
-`guide-screenshots-e2e-capture.md`. Later pages follow the same decision and carry no
-placeholders.
-
-## Cross-surface "you need registered components" framing
-
-Tracked separately in `registered-components-required-framing.md`.
+All follow D-0119 (promote connects; Test Connection confirms and retries) and D-0148 (no
+screenshots, no placeholders; the only sanctioned future path is
+`guide-screenshots-e2e-capture.md`). Each type's fields were taken from the registration
+contract in `internal/credential/registration.go`, the one `GET /api/v1/component-types`
+serves. The cross-surface "you need registered components" framing is tracked separately
+in `registered-components-required-framing.md`.
 
 ## Watch item — governed connectivity check
 
@@ -70,10 +36,42 @@ which is not admin-gated and is the subject of the open
 affordance at the admin credential-status probe, the confirmation step in every
 registration how-to must be revised to match.
 
-## Watch item — what Test Connection proves for GitHub and GitLab
+Two pages lean on that route harder than the rest, because for them the test is the step
+that connects an unpromoted component:
 
-The `github` and `gitlab` adapters make no API call in `Connect`, so Test Connection
-reports `connection successful` once the token resolves, while the success message itself
-says it "verifies reachability and authentication". `register-token-components.md` states
-what the test actually proves for those two types. If either adapter gains a probe in
-`Connect`, revise that paragraph.
+- `register-terraform-envoy.md` — the whole happy path. These types can never be
+  promoted, so the test and the boot connect pass are the only things that bring one live.
+- `register-url-components.md` § If the backend needs no token — the seven types there
+  resolve an empty static credential when unpromoted and send no `Authorization` header,
+  so an unpromoted component of those types connects on Test Connection and at boot, and
+  stays **inert**. The Promote dialog offers them no no-credential arm; only `git` has one
+  (D-0150). `governed-connectivity-check-surface.md` assumes an unpromoted component fails
+  to connect, which is not true of these types.
+
+If the test route is gated on arming, or a no-credential arm is extended to those seven
+types, both pages change. `docs/public/concepts/component-lifecycle.md` says a registered
+component "can do nothing" until it is armed, and the Register dialog says the same; the
+two pages above describe what the tree does instead.
+
+## Watch item — what Test Connection proves, per type
+
+The pages state what the test proves for each type, from each adapter's `Connect`. Revise
+the matching paragraph if a probe changes.
+
+- `github`, `gitlab` — no API call in `Connect`, so the test passes once the token
+  resolves, while the success message says it "verifies reachability and authentication".
+  `register-token-components.md` states this.
+- `grafana`, `argocd` — the probes are `/api/health` and `/api/version`, which those
+  services answer without checking the token. `register-url-token-components.md` states
+  this.
+- `newrelic` — the probe is a NerdGraph query for the key's own user; `account_id` is not
+  part of it.
+
+## Watch item — types with no agent tool
+
+`splunk`, `dynatrace` and `newrelic` register, promote and connect, and no tool in
+`internal/tools/default.go` queries them: the refresher writes one graph node per
+component and nothing else reads the adapter. `register-url-token-components.md` says so
+in its last step. `splunk`'s optional `index` field is declared, collected by the dialog,
+and used by nothing beyond the adapter's config parse. If a tool lands for any of the
+three, replace that paragraph with an example question, as the other types have.
