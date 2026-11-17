@@ -736,6 +736,97 @@ func TestEnhanceErrorWithDebug_GoogleAPI404_ClaudeModel(t *testing.T) {
 	}
 }
 
+// routingRoundTripper answers generateContent with one response and every
+// other request (the models list) with another, so a test can drive the 404
+// branch and the listAvailableModels call it makes independently.
+type routingRoundTripper struct {
+	generate mockRoundTripper
+	models   mockRoundTripper
+}
+
+func (r *routingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.Contains(req.URL.Path, ":generateContent") {
+		return r.generate.RoundTrip(req)
+	}
+	return r.models.RoundTrip(req)
+}
+
+// TestChat_404SurfacesAPIMessage pins that a 404 from generateContent carries
+// the API's own message through to the caller. The fixture is the real case:
+// Google retired gemini-2.5-pro for new users, answered generateContent with a
+// 404 naming the cause and the replacement, and still advertised the model in
+// the models list. joe printed "not found" beside a list containing the
+// rejected model and dropped the message that explained both.
+func TestChat_404SurfacesAPIMessage(t *testing.T) {
+	const model = "gemini-2.5-pro"
+	const apiMessage = "This model models/gemini-2.5-pro is no longer available to new users. " +
+		"Please update your code to use models/gemini-3.1-pro-preview for the latest features and improvements."
+	const notFoundBody = `{"error":{"code":404,"message":"` + apiMessage + `","status":"NOT_FOUND"}}`
+	const modelsBody = `{"models":[
+		{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},
+		{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]}
+	]}`
+
+	tests := []struct {
+		name       string
+		models     mockRoundTripper
+		wantListed bool
+	}{
+		{
+			name:       "models list served",
+			models:     mockRoundTripper{body: modelsBody, statusCode: 200},
+			wantListed: true,
+		},
+		{
+			name:   "models list unavailable",
+			models: mockRoundTripper{body: `{"error":{"code":500,"message":"backend error","status":"INTERNAL"}}`, statusCode: 500},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			gClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+				APIKey:  "fake-key",
+				Backend: genai.BackendGeminiAPI,
+				HTTPClient: &http.Client{Transport: &routingRoundTripper{
+					generate: mockRoundTripper{body: notFoundBody, statusCode: 404},
+					models:   tt.models,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("Failed to create mock Gemini client: %v", err)
+			}
+			client := &Client{client: gClient, model: model}
+
+			_, err = client.Chat(ctx, llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "Hello"}},
+			})
+
+			var enhanced *APIError
+			if !errors.As(err, &enhanced) || enhanced.Code != 404 {
+				t.Fatalf("want *APIError code 404, got %v", err)
+			}
+			got := err.Error()
+			msgAt := strings.Index(got, apiMessage)
+			if msgAt < 0 {
+				t.Fatalf("404 error dropped the API's message.\nwant it to contain: %s\ngot: %s", apiMessage, got)
+			}
+			listAt := strings.Index(got, "Available models:")
+			if tt.wantListed {
+				if listAt < 0 || !strings.Contains(got, "  - "+model) {
+					t.Fatalf("want the available-models list kept, with %s in it, got: %s", model, got)
+				}
+				if listAt < msgAt {
+					t.Errorf("want the API's message before the available-models list, got: %s", got)
+				}
+			} else if listAt >= 0 {
+				t.Errorf("want no available-models list when the list call fails, got: %s", got)
+			}
+		})
+	}
+}
+
 func TestEnhanceErrorWithDebug_GoogleAPI400(t *testing.T) {
 	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
 	defer os.Unsetenv("GEMINI_API_KEY")
