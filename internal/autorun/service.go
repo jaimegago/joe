@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jaimegago/joe/internal/agentctx"
 	"github.com/jaimegago/joe/internal/agentloop"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/prompts"
 	"github.com/jaimegago/joe/internal/rbac"
 	"github.com/jaimegago/joe/internal/sessionmodel"
@@ -248,6 +250,23 @@ func (s *Service) TriggerWithBudget(ctx context.Context, activator string, sel S
 	return &snapshot, nil
 }
 
+// scheduleActivatorPrefix is how a run's Activator names the installed
+// schedule that fired it ("schedule:<id>"); any other activator is the
+// operator principal who triggered the run.
+const scheduleActivatorPrefix = "schedule:"
+
+// runTrigger is what opened a run's session, recorded on every act of the
+// pass whose tool call declares no trigger of its own (D-0171). A run an
+// operator triggered was caused by that operator's request; a run a schedule
+// fired was caused by the standing policy the schedule is. Both are
+// referenced by ids the run record already carries.
+func runTrigger(run Run) audit.Trigger {
+	if id, ok := strings.CutPrefix(run.Activator, scheduleActivatorPrefix); ok {
+		return audit.Trigger{Type: audit.TriggerPolicy, Ref: "schedule/" + id}
+	}
+	return audit.Trigger{Type: audit.TriggerOperatorRequest, Ref: "run/" + run.ID}
+}
+
 // execute is the pass: the loop under svc:agent:core, bounded by the two
 // ceilings; then, when a ceiling stopped it, the report call funded from the
 // reserve; then the record and the session's final turn.
@@ -255,6 +274,11 @@ func (s *Service) execute(base context.Context, run Run, budget Budget) {
 	ctx := rbac.WithPrincipal(base, s.principal)
 	ctx = agentctx.WithSessionID(ctx, run.SessionID)
 	ctx = agentctx.WithTaskID(ctx, run.ID)
+	ctx = audit.WithScope(ctx, audit.Scope{
+		SessionID: run.SessionID,
+		TaskID:    run.ID,
+		Trigger:   runTrigger(run),
+	})
 
 	cov := newCoverage(run.ResolvedComponents)
 	loop, err := s.cfg.Loop(ctx, &run, cov)
@@ -461,7 +485,7 @@ func (s *Service) Tick(ctx context.Context) {
 		return
 	}
 	for _, sch := range due {
-		activator := "schedule:" + sch.ID
+		activator := scheduleActivatorPrefix + sch.ID
 		budget := sch.Budget()
 		budget.ReportReserve = s.cfg.Budget.ReportReserve
 		outcome := ""

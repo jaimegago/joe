@@ -573,10 +573,11 @@ func TestE2E_AutoRun(t *testing.T) {
 
 		// A run triggered by svc:e2e reads as svc:agent:core: every accessor
 		// decision recorded from its trigger to its delivered turn is under
-		// that principal. audit_log has no HTTP read surface, so it is read
-		// from joe's database file, read-only. Nothing else in this window
-		// reads a component as a person: the window is the run's, the
-		// refresher's and the schedule's, all svc:agent:core.
+		// that principal. audit_log's one HTTP read serves a single session's
+		// acts, and this window is every accessor decision whatever its
+		// session, so it is read from joe's database file, read-only. Nothing
+		// else in this window reads a component as a person: the window is
+		// the run's, the refresher's and the schedule's, all svc:agent:core.
 		db, err := sql.Open("sqlite", "file:"+h.DBPath()+"?mode=ro")
 		if err != nil {
 			t.Fatal(err)

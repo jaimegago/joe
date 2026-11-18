@@ -185,11 +185,15 @@ func TestPhaseF_FailClosedOnMutate(t *testing.T) {
 	}
 }
 
-// TestPhaseF_FailOpenOnRead — design §4: a read action whose audit row
-// cannot be written MUST still proceed (availability > audit
-// completeness for reads). The adapter must be invoked, and the caller
-// must see no error.
-func TestPhaseF_FailOpenOnRead(t *testing.T) {
+// TestRead_NotTakenWhenAuditEntryCannotBeWritten — D-0169, reversing the
+// fail-open read §4 used to prescribe: an act whose audit entry cannot be
+// written is not taken, reads included. The adapter must not be invoked, and
+// the caller must see the audit-write failure and not a permission denial.
+//
+// The control is in the same test: the identical call with a healthy audit
+// store reaches the adapter, so what stops the first call is the failed write
+// and nothing else about the setup.
+func TestRead_NotTakenWhenAuditEntryCannotBeWritten(t *testing.T) {
 	repo := newFakeRepo()
 	repo.assign("s-k8s", "z-read")
 	repo.grant("alice", "z-read")
@@ -200,16 +204,35 @@ func TestPhaseF_FailOpenOnRead(t *testing.T) {
 	reg.Register("s-k8s", fakeK8s{called: &called})
 
 	rec := &recordingAudit{
-		errFn: func(_ audit.Event) error { return errors.New("audit store down") },
+		errFn: func(_ audit.Event) error { return audit.ErrAuditWriteFailed },
 	}
 	a := access.New(reg, nil, engine, rec)
 
 	_, err := a.K8sListResources(context.Background(), "alice", "s-k8s", "pods", "")
-	if err != nil {
-		t.Fatalf("read returned %v; reads must fail-open even when audit-write fails", err)
+	if err == nil {
+		t.Fatal("read returned no error although its audit entry could not be written; the act must not be taken")
+	}
+	if called {
+		t.Fatal("adapter was invoked although the read's audit entry could not be written")
+	}
+	if !errors.Is(err, audit.ErrAuditWriteFailed) {
+		t.Errorf("error = %v; want it to wrap audit.ErrAuditWriteFailed so callers can tell why the act was refused", err)
+	}
+	if errors.Is(err, access.ErrPermissionDenied) {
+		t.Errorf("error = %v; a failed audit write is not a permission denial", err)
+	}
+	if rows := rec.snapshot(); len(rows) != 0 {
+		t.Errorf("%d audit rows recorded although every write failed: %#v", len(rows), rows)
+	}
+
+	// Control: same principal, same component, same call, healthy store.
+	healthy := &recordingAudit{}
+	a = access.New(reg, nil, engine, healthy)
+	if _, err := a.K8sListResources(context.Background(), "alice", "s-k8s", "pods", ""); err != nil {
+		t.Fatalf("control read with a healthy audit store returned %v", err)
 	}
 	if !called {
-		t.Fatal("adapter was NOT invoked; reads must proceed despite audit-write failure")
+		t.Fatal("control read did not reach the adapter; the refusal above proves nothing")
 	}
 }
 

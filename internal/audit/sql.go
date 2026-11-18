@@ -9,12 +9,13 @@ import (
 	"github.com/jaimegago/joe/internal/store"
 )
 
-// sqlRepository is the SQLite/Postgres-backed audit log. Only the two
-// insert paths are exposed — Insert (opens its own statement directly on
-// the database handle) and InsertTx (executes against a caller-supplied
-// *sql.Tx so the audit row commits atomically with whatever settings or
-// state mutation the caller is performing). Every other surface — UPDATE,
-// DELETE, Truncate — is structurally absent. The underlying audit_log
+// sqlRepository is the SQL-backed audit log. Its write surface is the two
+// insert paths — Insert (opens its own statement directly on the database
+// handle) and InsertTx (executes against a caller-supplied *sql.Tx so the
+// audit row commits atomically with whatever settings or state mutation the
+// caller is performing). Its one read, SessionTrail (trail.go), is reached
+// only through the separate TrailReader interface. Every other surface —
+// UPDATE, DELETE, Truncate — is structurally absent. The underlying audit_log
 // table has SQLite triggers (migration 015, preserved verbatim by 017)
 // that ABORT any UPDATE or DELETE, so a future caller that bypassed this
 // package could not mutate history either. The two enforcements are
@@ -99,6 +100,7 @@ func (r *sqlRepository) insertOn(ctx context.Context, exec execContext, e Event)
 		principal sql.NullString
 		zone      sql.NullString
 		component sql.NullString
+		session   sql.NullString
 	)
 	if e.Principal != "" {
 		principal = sql.NullString{String: e.Principal, Valid: true}
@@ -109,11 +111,14 @@ func (r *sqlRepository) insertOn(ctx context.Context, exec execContext, e Event)
 	if e.ComponentID != "" {
 		component = sql.NullString{String: e.ComponentID, Valid: true}
 	}
+	if e.SessionID != "" {
+		session = sql.NullString{String: e.SessionID, Valid: true}
+	}
 
 	_, err := exec.ExecContext(ctx, store.Rebind(r.driver, `
 		INSERT INTO audit_log
-			(created_at, principal, action, zone, component_id, decision, reason, kind, context)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			(created_at, principal, action, zone, component_id, decision, reason, kind, context, session_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		e.Timestamp.UTC().Format(time.RFC3339Nano),
 		principal,
 		e.Action,
@@ -123,6 +128,7 @@ func (r *sqlRepository) insertOn(ctx context.Context, exec execContext, e Event)
 		e.Reason,
 		string(e.Kind),
 		e.Context,
+		session,
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuditWriteFailed, err)

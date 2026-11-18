@@ -12,13 +12,14 @@ import (
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
 	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
 // --- Prometheus ---
 
 func (a *Accessor) PrometheusQuery(ctx context.Context, principal rbac.Principal, sourceID, query string, queryTime time.Time) (*prometheusadapter.QueryResult, error) {
-	ad, err := guard[prometheusadapter.PrometheusAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "prometheus")
+	ad, err := guard[prometheusadapter.PrometheusAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "metrics"}, "prometheus")
 	if err != nil {
 		return nil, err
 	}
@@ -26,7 +27,7 @@ func (a *Accessor) PrometheusQuery(ctx context.Context, principal rbac.Principal
 }
 
 func (a *Accessor) PrometheusQueryRange(ctx context.Context, principal rbac.Principal, sourceID, query string, start, end time.Time, step time.Duration) (*prometheusadapter.QueryResult, error) {
-	ad, err := guard[prometheusadapter.PrometheusAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "prometheus")
+	ad, err := guard[prometheusadapter.PrometheusAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "metrics"}, "prometheus")
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +35,7 @@ func (a *Accessor) PrometheusQueryRange(ctx context.Context, principal rbac.Prin
 }
 
 func (a *Accessor) PrometheusTargets(ctx context.Context, principal rbac.Principal, sourceID string) ([]prometheusadapter.Target, error) {
-	ad, err := guard[prometheusadapter.PrometheusAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "prometheus")
+	ad, err := guard[prometheusadapter.PrometheusAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "targets"}, "prometheus")
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +45,7 @@ func (a *Accessor) PrometheusTargets(ctx context.Context, principal rbac.Princip
 // --- Loki ---
 
 func (a *Accessor) LokiQuery(ctx context.Context, principal rbac.Principal, sourceID, query string, limit int, since time.Duration) (*lokiadapter.QueryResult, error) {
-	ad, err := guard[lokiadapter.LokiAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "loki")
+	ad, err := guard[lokiadapter.LokiAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "logs"}, "loki")
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +53,7 @@ func (a *Accessor) LokiQuery(ctx context.Context, principal rbac.Principal, sour
 }
 
 func (a *Accessor) LokiQueryRange(ctx context.Context, principal rbac.Principal, sourceID, query string, start, end time.Time, limit int) (*lokiadapter.QueryResult, error) {
-	ad, err := guard[lokiadapter.LokiAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "loki")
+	ad, err := guard[lokiadapter.LokiAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "logs"}, "loki")
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func (a *Accessor) LokiQueryRange(ctx context.Context, principal rbac.Principal,
 // --- Tempo ---
 
 func (a *Accessor) TempoSearch(ctx context.Context, principal rbac.Principal, sourceID, service, tags string, minDurationMs, maxDurationMs, limit int) ([]tempoadapter.TraceSearchResult, error) {
-	ad, err := guard[tempoadapter.TempoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "tempo")
+	ad, err := guard[tempoadapter.TempoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "traces"}, "tempo")
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func (a *Accessor) TempoSearch(ctx context.Context, principal rbac.Principal, so
 }
 
 func (a *Accessor) TempoGetTrace(ctx context.Context, principal rbac.Principal, sourceID, traceID string) (*tempoadapter.Trace, error) {
-	ad, err := guard[tempoadapter.TempoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "tempo")
+	ad, err := guard[tempoadapter.TempoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "traces", Name: traceID}, "tempo")
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +81,7 @@ func (a *Accessor) TempoGetTrace(ctx context.Context, principal rbac.Principal, 
 // --- Jaeger ---
 
 func (a *Accessor) JaegerServices(ctx context.Context, principal rbac.Principal, sourceID string) ([]string, error) {
-	ad, err := guard[jaegeradapter.JaegerAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "jaeger")
+	ad, err := guard[jaegeradapter.JaegerAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "services"}, "jaeger")
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func (a *Accessor) JaegerServices(ctx context.Context, principal rbac.Principal,
 }
 
 func (a *Accessor) JaegerSearchTraces(ctx context.Context, principal rbac.Principal, sourceID, service, operation string, limit int) ([]jaegeradapter.TraceSearchResult, error) {
-	ad, err := guard[jaegeradapter.JaegerAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "jaeger")
+	ad, err := guard[jaegeradapter.JaegerAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "traces"}, "jaeger")
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +97,7 @@ func (a *Accessor) JaegerSearchTraces(ctx context.Context, principal rbac.Princi
 }
 
 func (a *Accessor) JaegerGetTrace(ctx context.Context, principal rbac.Principal, sourceID, traceID string) (map[string]any, error) {
-	ad, err := guard[jaegeradapter.JaegerAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "jaeger")
+	ad, err := guard[jaegeradapter.JaegerAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "traces", Name: traceID}, "jaeger")
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +107,7 @@ func (a *Accessor) JaegerGetTrace(ctx context.Context, principal rbac.Principal,
 // --- Datadog ---
 
 func (a *Accessor) DatadogMetricsQuery(ctx context.Context, principal rbac.Principal, sourceID, query string, from, to int64) (*datadogadapter.MetricsResult, error) {
-	ad, err := guard[datadogadapter.DatadogAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "datadog")
+	ad, err := guard[datadogadapter.DatadogAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "metrics"}, "datadog")
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func (a *Accessor) DatadogMetricsQuery(ctx context.Context, principal rbac.Princ
 }
 
 func (a *Accessor) DatadogLogsSearch(ctx context.Context, principal rbac.Principal, sourceID, query string, from, to int64, limit int) (*datadogadapter.LogsResult, error) {
-	ad, err := guard[datadogadapter.DatadogAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "datadog")
+	ad, err := guard[datadogadapter.DatadogAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "logs"}, "datadog")
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +125,7 @@ func (a *Accessor) DatadogLogsSearch(ctx context.Context, principal rbac.Princip
 // --- Splunk ---
 
 func (a *Accessor) SplunkSearch(ctx context.Context, principal rbac.Principal, sourceID, query, earliest, latest string, limit int) (*splunkadapter.SearchResult, error) {
-	ad, err := guard[splunkadapter.SplunkAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "splunk")
+	ad, err := guard[splunkadapter.SplunkAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "logs"}, "splunk")
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +135,7 @@ func (a *Accessor) SplunkSearch(ctx context.Context, principal rbac.Principal, s
 // --- Dynatrace ---
 
 func (a *Accessor) DynatraceMetricsQuery(ctx context.Context, principal rbac.Principal, sourceID, query string, from, to int64) (*dynatraceadapter.MetricsResult, error) {
-	ad, err := guard[dynatraceadapter.DynatraceAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "dynatrace")
+	ad, err := guard[dynatraceadapter.DynatraceAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "metrics"}, "dynatrace")
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +143,7 @@ func (a *Accessor) DynatraceMetricsQuery(ctx context.Context, principal rbac.Pri
 }
 
 func (a *Accessor) DynatraceEvents(ctx context.Context, principal rbac.Principal, sourceID string, from, to int64, limit int) (*dynatraceadapter.EventsResult, error) {
-	ad, err := guard[dynatraceadapter.DynatraceAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "dynatrace")
+	ad, err := guard[dynatraceadapter.DynatraceAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "events"}, "dynatrace")
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +153,7 @@ func (a *Accessor) DynatraceEvents(ctx context.Context, principal rbac.Principal
 // --- New Relic ---
 
 func (a *Accessor) NewRelicNRQL(ctx context.Context, principal rbac.Principal, sourceID string, accountID int, query string) (*newrelicadapter.NRQLResult, error) {
-	ad, err := guard[newrelicadapter.NewRelicAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "newrelic")
+	ad, err := guard[newrelicadapter.NewRelicAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "nrql"}, "newrelic")
 	if err != nil {
 		return nil, err
 	}

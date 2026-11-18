@@ -252,7 +252,7 @@ func (w *Wrapper) ExecuteBatch(ctx context.Context, calls []tools.ToolCallReques
 	results := make([]tools.ToolCallResult, len(calls))
 	errorCount := 0
 	for i, call := range calls {
-		result, err := w.Execute(ctx, call.Name, call.Args)
+		result, err := w.Execute(tools.WithToolCallID(ctx, call.ID), call.Name, call.Args)
 		results[i] = tools.ToolCallResult{
 			ID:     call.ID,
 			Name:   call.Name,

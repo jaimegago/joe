@@ -99,6 +99,12 @@ var ErrWrongAdapterType = errors.New("component is not the expected adapter type
 // graph store is wired (services.Graph == nil).
 var ErrGraphUnavailable = errors.New("graph store not available")
 
+// ErrUndeclaredOperation is returned when a dispatch method reaches the permit
+// chokepoint for an act against a managed system without declaring what the
+// act is. It is a programming error, never a runtime condition: every dispatch
+// declares its operation as a literal beside the adapter call.
+var ErrUndeclaredOperation = errors.New("accessor dispatch declared no operation")
+
 // Accessor is the guarded seam in front of the adapter registry and the
 // graph store. Construct it with New; it is safe for concurrent use (the
 // registry and graph store it wraps are themselves concurrency-safe).
@@ -116,8 +122,9 @@ type Accessor struct {
 	// makes — allow and deny alike — writes ONE row here at the decision
 	// point. A nil auditRepo is treated as "audit disabled" (used by
 	// dev/local runs without a database); cmd/joe/server.go always
-	// wires a real one. The failure split (§4) is fail-CLOSED for
-	// mutating actions and fail-OPEN for reads (see audit.FailurePosture).
+	// wires a real one. The failure posture (§4, as amended by D-0169) is
+	// fail-CLOSED for every action, reads included: an act whose audit row
+	// cannot be written is not taken (see audit.FailurePosture).
 	auditRepo audit.Repository
 }
 
@@ -137,12 +144,20 @@ func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.
 // append-only audit log capturing the decision (Phase F, design §2.6). On a
 // denied decision it returns ErrPermissionDenied.
 //
-// Audit-write failures honour the §4 failure split:
-//   - Mutating actions (ActionMutate, ActionDelete) fail CLOSED: if the audit
-//     row cannot be written, permit returns the audit error and the caller
-//     does not invoke the adapter or graph method.
-//   - Reads (ActionRead, ActionQuery) fail OPEN: a missing audit row is
-//     logged loudly but does not block the action.
+// op is the operation the caller is about to perform against a managed
+// system, declared by the dispatch method beside the adapter call it gates.
+// When it is set the row records an act (audit.Act): the operation and its
+// target, and — when the call runs inside an agent loop — the session it
+// belongs to, the model's own reason for the call and what triggered it
+// (D-0170, D-0171). A nil op is a decision that reaches no managed system
+// (the graph store, component resolution, the refresh seam), and its row is
+// the bare decision it has always been.
+//
+// An audit-write failure fails CLOSED for every action (§4 as amended by
+// D-0169): if the row cannot be written, permit returns the audit error and
+// the caller does not resolve or invoke the adapter or graph method. That
+// holds for reads and queries exactly as for mutations — an act whose audit
+// entry cannot be written is not taken.
 //
 // A nil engine permits everything (RBAC disabled) — but the audit row is
 // still written, with reason "rbac_disabled", so the trail is complete even
@@ -156,7 +171,7 @@ func New(registry *adapters.Registry, graphStore graph.GraphStore, engine *rbac.
 // permit performs NO infrastructure access: callers must invoke it before
 // resolving or calling any adapter or graph method, so that a denial never
 // touches infrastructure.
-func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sourceID string, action rbac.Action) error {
+func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sourceID string, action rbac.Action, op *audit.Operation) error {
 	// Determine the decision (allow/deny) and the structured details
 	// captured in the audit row.
 	var (
@@ -187,7 +202,7 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 		decision = audit.DecisionAllow
 	}
 	if a.auditRepo != nil {
-		auditErr := a.auditRepo.Insert(ctx, audit.Event{
+		event := audit.Event{
 			Principal:   primaryPrincipal,
 			Action:      string(action),
 			Zone:        zone,
@@ -195,11 +210,16 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 			Decision:    decision,
 			Reason:      reason,
 			Kind:        audit.KindInfraAccess,
-		})
-		if auditErr != nil {
-			// Fail-closed for mutate/delete; fail-open for reads.
+		}
+		if op != nil {
+			act, sessionID := audit.ActFor(ctx, *op)
+			event.SessionID = sessionID
+			event.Context = act.Encode()
+		}
+		if auditErr := a.auditRepo.Insert(ctx, event); auditErr != nil {
+			// Fail-closed for every action, reads included (D-0169).
 			if blocking := audit.FailurePosture(ctx, string(action), auditErr, "accessor", audit.PostureForAction(string(action))); blocking != nil {
-				return fmt.Errorf("audit write failed for mutating action: %w", blocking)
+				return fmt.Errorf("audit entry could not be written, so the act was not taken: %w", blocking)
 			}
 		}
 	}
@@ -231,8 +251,26 @@ func (a *Accessor) permit(ctx context.Context, principals rbac.PrincipalSet, sou
 // it is where group: members (from an IdP groups claim) will be added in a
 // later phase without touching every dispatch method. It performs no
 // infrastructure access (see permit).
+//
+// It records a bare decision, with no act: it is the entry for decisions that
+// reach no managed system. A dispatch that is about to call an adapter uses
+// permitAct instead.
 func (a *Accessor) permitForPrincipal(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) error {
-	return a.permit(ctx, rbac.NewPrincipalSet(principal), sourceID, action)
+	return a.permit(ctx, rbac.NewPrincipalSet(principal), sourceID, action, nil)
+}
+
+// permitAct is permitForPrincipal for a decision that gates an act against a
+// managed system: the row it writes carries op and, inside an agent loop, the
+// session, the model's reason and the trigger. An operation that declares no
+// verb or no resource is a programming error at the dispatch site and is
+// refused before any decision, so an act can never be taken on a row that
+// does not say what it was.
+func (a *Accessor) permitAct(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action, op audit.Operation) error {
+	if op.Verb == "" || op.Resource == "" {
+		return fmt.Errorf("%w: dispatch for component %q declared no operation (verb %q, resource %q)",
+			ErrUndeclaredOperation, sourceID, op.Verb, op.Resource)
+	}
+	return a.permit(ctx, rbac.NewPrincipalSet(principal), sourceID, action, &op)
 }
 
 // ResolveAdapter enforces (principal, sourceID, action) and, on a permitted
@@ -249,6 +287,11 @@ func (a *Accessor) permitForPrincipal(ctx context.Context, principal rbac.Princi
 // semantics of the call (design §2.8). This method performs no infrastructure
 // access beyond resolving the adapter handle; the caller invokes adapter
 // methods itself.
+//
+// Its row records the decision and no act: the seam hands out the adapter and
+// cannot see which operations the caller then performs. It serves the
+// autonomous refresh, which runs outside any agent loop; what that path owes
+// the audit log beyond the decision is not settled here.
 func (a *Accessor) ResolveAdapter(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) (adapters.Adapter, error) {
 	// This seam resolves adapters for the autonomous refresh path, which is
 	// read-only on customer infrastructure by invariant (api/access_guard_test.go
@@ -278,6 +321,12 @@ func (a *Accessor) ResolveAdapter(ctx context.Context, principal rbac.Principal,
 // ErrPermissionDenied and never calls Registry.Get, so no infrastructure
 // adapter is touched.
 //
+// op is the operation the dispatch method is about to perform, declared at
+// the call site beside the action and for the same reason (design §2.8): it
+// is what the act's audit row records (see permitAct). It is a required
+// argument, so a dispatch method cannot reach an adapter without saying what
+// it is about to do.
+//
 // guard is a package-level function (Go methods cannot be type-parameterised)
 // but it is the ONLY code that calls a.registry.Get — the static guard test
 // relies on that. typeName is a human-readable adapter kind used only for the
@@ -288,10 +337,11 @@ func guard[T any](
 	principal rbac.Principal,
 	sourceID string,
 	action rbac.Action,
+	op audit.Operation,
 	typeName string,
 ) (T, error) {
 	var zero T
-	if err := a.permitForPrincipal(ctx, principal, sourceID, action); err != nil {
+	if err := a.permitAct(ctx, principal, sourceID, action, op); err != nil {
 		return zero, err
 	}
 	adapter, err := a.registry.Get(sourceID)

@@ -306,6 +306,7 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	// usage recorder can read them when persisting each per-call row.
 	ctx = agentctx.WithSessionID(ctx, prepared.sessionID)
 	ctx = agentctx.WithTaskID(ctx, taskID)
+	ctx = withTaskAuditScope(ctx, prepared.sessionID, taskID)
 	start := time.Now()
 	answer, runErr := prepared.agent.Run(ctx, prepared.session, req.Message)
 	duration := time.Since(start)
@@ -341,6 +342,21 @@ func (h *taskHandler) handleTask(w http.ResponseWriter, r *http.Request) {
 	)
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// withTaskAuditScope stamps the audit scope of one task turn: every act the
+// loop takes against a managed system is recorded against sessionID — the
+// session id the task response returns — and, unless the model declares
+// another trigger with the tool call, against the operator request that
+// started the turn, referenced by the task id the response also returns
+// (D-0171). Shared by the /tasks and /tasks/stream handlers so the two cannot
+// scope a turn differently.
+func withTaskAuditScope(ctx context.Context, sessionID, taskID string) context.Context {
+	return audit.WithScope(ctx, audit.Scope{
+		SessionID: sessionID,
+		TaskID:    taskID,
+		Trigger:   audit.Trigger{Type: audit.TriggerOperatorRequest, Ref: "task/" + taskID},
+	})
 }
 
 // preparedTask bundles the constructed agent and session for one task run. It

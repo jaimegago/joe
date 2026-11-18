@@ -58,97 +58,112 @@ func NewCoreRegistry(coreClient coretools.CoreToolsClient, policy *safety.Safety
 }
 
 // registerCoreTools registers all core tools that communicate with joecored.
+//
+// Every tool that reaches a managed system is registered through act, and the
+// four that read only Joe's own stores are registered bare. The split is
+// pinned by TestCoreRegistry_ActDeclarationCoversManagedSystemTools, which
+// derives the bare set from this function's four names and refuses a fifth.
 func registerCoreTools(registry *Registry, coreClient coretools.CoreToolsClient) {
+	// act registers a tool whose calls reach a managed system through the
+	// guarded accessor. Each such call leaves an audit entry, and the act
+	// declaration is how the model states its reason and trigger with the
+	// call (see WithActDeclaration).
+	act := func(t Tool) { registry.Register(WithActDeclaration(t)) }
+
+	// Joe's own stores: the component registry and the infrastructure graph.
+	// These calls reach no managed system and carry no act declaration.
 	registry.Register(coretools.NewListComponentsTool(coreClient))
 	registry.Register(coretools.NewResolveComponentTool(coreClient))
 	registry.Register(coretools.NewGraphQueryTool(coreClient))
 	registry.Register(coretools.NewGraphRelatedTool(coreClient))
-	registry.Register(coretools.NewK8sGetTool(coreClient))
-	registry.Register(coretools.NewK8sLogsTool(coreClient))
-	registry.Register(coretools.NewGitReadTool(coreClient))
-	registry.Register(coretools.NewGitLogTool(coreClient))
-	registry.Register(coretools.NewGitDiffTool(coreClient))
-	registry.Register(coretools.NewRepoSearchTool(coreClient))
-	registry.Register(coretools.NewAWSEC2Tool(coreClient))
-	registry.Register(coretools.NewAWSEKSTool(coreClient))
-	registry.Register(coretools.NewAWSRDSTool(coreClient))
-	registry.Register(coretools.NewAWSVPCTool(coreClient))
+
+	// Managed systems.
+	act(coretools.NewK8sGetTool(coreClient))
+	act(coretools.NewK8sLogsTool(coreClient))
+	act(coretools.NewGitReadTool(coreClient))
+	act(coretools.NewGitLogTool(coreClient))
+	act(coretools.NewGitDiffTool(coreClient))
+	act(coretools.NewRepoSearchTool(coreClient))
+	act(coretools.NewAWSEC2Tool(coreClient))
+	act(coretools.NewAWSEKSTool(coreClient))
+	act(coretools.NewAWSRDSTool(coreClient))
+	act(coretools.NewAWSVPCTool(coreClient))
 
 	// Observability tools
-	registry.Register(coretools.NewPrometheusQueryTool(coreClient))
-	registry.Register(coretools.NewLokiQueryTool(coreClient))
-	registry.Register(coretools.NewTempoSearchTool(coreClient))
-	registry.Register(coretools.NewJaegerTracesTool(coreClient))
+	act(coretools.NewPrometheusQueryTool(coreClient))
+	act(coretools.NewLokiQueryTool(coreClient))
+	act(coretools.NewTempoSearchTool(coreClient))
+	act(coretools.NewJaegerTracesTool(coreClient))
 
 	// Alerting tools
-	registry.Register(coretools.NewAlertmanagerAlertsTool(coreClient))
-	registry.Register(coretools.NewPagerDutyIncidentsTool(coreClient))
-	registry.Register(coretools.NewGrafanaDashboardsTool(coreClient))
+	act(coretools.NewAlertmanagerAlertsTool(coreClient))
+	act(coretools.NewPagerDutyIncidentsTool(coreClient))
+	act(coretools.NewGrafanaDashboardsTool(coreClient))
 
 	// Data store tools
-	registry.Register(coretools.NewPostgresStatTool(coreClient))
-	registry.Register(coretools.NewPostgresQueryTool(coreClient))
-	registry.Register(coretools.NewMySQLStatTool(coreClient))
-	registry.Register(coretools.NewMySQLQueryTool(coreClient))
-	registry.Register(coretools.NewRedisInfoTool(coreClient))
-	registry.Register(coretools.NewRedisSlowLogTool(coreClient))
-	registry.Register(coretools.NewMongoDBStatTool(coreClient))
-	registry.Register(coretools.NewKafkaTopicsTool(coreClient))
-	registry.Register(coretools.NewKafkaBrokersTool(coreClient))
-	registry.Register(coretools.NewKafkaConsumerGroupsTool(coreClient))
-	registry.Register(coretools.NewElasticsearchHealthTool(coreClient))
-	registry.Register(coretools.NewElasticsearchIndicesTool(coreClient))
+	act(coretools.NewPostgresStatTool(coreClient))
+	act(coretools.NewPostgresQueryTool(coreClient))
+	act(coretools.NewMySQLStatTool(coreClient))
+	act(coretools.NewMySQLQueryTool(coreClient))
+	act(coretools.NewRedisInfoTool(coreClient))
+	act(coretools.NewRedisSlowLogTool(coreClient))
+	act(coretools.NewMongoDBStatTool(coreClient))
+	act(coretools.NewKafkaTopicsTool(coreClient))
+	act(coretools.NewKafkaBrokersTool(coreClient))
+	act(coretools.NewKafkaConsumerGroupsTool(coreClient))
+	act(coretools.NewElasticsearchHealthTool(coreClient))
+	act(coretools.NewElasticsearchIndicesTool(coreClient))
 
 	// GitOps, CD & IaC tools
-	registry.Register(coretools.NewArgoCDAppsTool(coreClient))
-	registry.Register(coretools.NewArgoCDGetAppTool(coreClient))
-	registry.Register(coretools.NewArgoCDDiffTool(coreClient))
-	registry.Register(coretools.NewArgoCDHistoryTool(coreClient))
-	registry.Register(coretools.NewFluxStatusTool(coreClient))
-	registry.Register(coretools.NewFluxResourceTool(coreClient))
-	registry.Register(coretools.NewTerraformStateTool(coreClient))
-	registry.Register(coretools.NewTerraformResourceTool(coreClient))
-	registry.Register(coretools.NewTerraformOutputsTool(coreClient))
-	registry.Register(coretools.NewHelmReleasesTool(coreClient))
-	registry.Register(coretools.NewHelmGetReleaseTool(coreClient))
-	registry.Register(coretools.NewHelmHistoryTool(coreClient))
+	act(coretools.NewArgoCDAppsTool(coreClient))
+	act(coretools.NewArgoCDGetAppTool(coreClient))
+	act(coretools.NewArgoCDDiffTool(coreClient))
+	act(coretools.NewArgoCDHistoryTool(coreClient))
+	act(coretools.NewFluxStatusTool(coreClient))
+	act(coretools.NewFluxResourceTool(coreClient))
+	act(coretools.NewTerraformStateTool(coreClient))
+	act(coretools.NewTerraformResourceTool(coreClient))
+	act(coretools.NewTerraformOutputsTool(coreClient))
+	act(coretools.NewHelmReleasesTool(coreClient))
+	act(coretools.NewHelmGetReleaseTool(coreClient))
+	act(coretools.NewHelmHistoryTool(coreClient))
 
 	// Networking & Ingress tools
-	registry.Register(coretools.NewNginxIngressesTool(coreClient))
-	registry.Register(coretools.NewNginxStatusTool(coreClient))
-	registry.Register(coretools.NewNginxConfigTool(coreClient))
-	registry.Register(coretools.NewEnvoyClustersTool(coreClient))
-	registry.Register(coretools.NewEnvoyConfigTool(coreClient))
-	registry.Register(coretools.NewEnvoyStatsTool(coreClient))
-	registry.Register(coretools.NewIstioConfigTool(coreClient))
-	registry.Register(coretools.NewIstioResourceTool(coreClient))
-	registry.Register(coretools.NewCiliumPoliciesTool(coreClient))
-	registry.Register(coretools.NewCiliumEndpointsTool(coreClient))
+	act(coretools.NewNginxIngressesTool(coreClient))
+	act(coretools.NewNginxStatusTool(coreClient))
+	act(coretools.NewNginxConfigTool(coreClient))
+	act(coretools.NewEnvoyClustersTool(coreClient))
+	act(coretools.NewEnvoyConfigTool(coreClient))
+	act(coretools.NewEnvoyStatsTool(coreClient))
+	act(coretools.NewIstioConfigTool(coreClient))
+	act(coretools.NewIstioResourceTool(coreClient))
+	act(coretools.NewCiliumPoliciesTool(coreClient))
+	act(coretools.NewCiliumEndpointsTool(coreClient))
 
 	// K8s CRD-based tools
-	registry.Register(coretools.NewCertManagerCertsTool(coreClient))
-	registry.Register(coretools.NewCertManagerIssuersTool(coreClient))
-	registry.Register(coretools.NewKEDAScaledObjectsTool(coreClient))
-	registry.Register(coretools.NewOPAConstraintsTool(coreClient))
-	registry.Register(coretools.NewOPAViolationsTool(coreClient))
-	registry.Register(coretools.NewCrossplaneProvidersTool(coreClient))
-	registry.Register(coretools.NewCrossplaneResourcesTool(coreClient))
+	act(coretools.NewCertManagerCertsTool(coreClient))
+	act(coretools.NewCertManagerIssuersTool(coreClient))
+	act(coretools.NewKEDAScaledObjectsTool(coreClient))
+	act(coretools.NewOPAConstraintsTool(coreClient))
+	act(coretools.NewOPAViolationsTool(coreClient))
+	act(coretools.NewCrossplaneProvidersTool(coreClient))
+	act(coretools.NewCrossplaneResourcesTool(coreClient))
 
 	// Security & runtime tools
-	registry.Register(coretools.NewFalcoAlertsTool(coreClient))
-	registry.Register(coretools.NewFalcoRulesTool(coreClient))
+	act(coretools.NewFalcoAlertsTool(coreClient))
+	act(coretools.NewFalcoRulesTool(coreClient))
 
 	// Artifact registry tools
-	registry.Register(coretools.NewRegistryQueryTool(coreClient))
-	registry.Register(coretools.NewArtifactoryQueryTool(coreClient))
-	registry.Register(coretools.NewECRQueryTool(coreClient))
+	act(coretools.NewRegistryQueryTool(coreClient))
+	act(coretools.NewArtifactoryQueryTool(coreClient))
+	act(coretools.NewECRQueryTool(coreClient))
 
 	// Code review tools
-	registry.Register(coretools.NewGitHubPRGetTool(coreClient))
-	registry.Register(coretools.NewGitHubPRDiffTool(coreClient))
-	registry.Register(coretools.NewGitHubCommentTool(coreClient))
-	registry.Register(coretools.NewGitHubRequestChangesTool(coreClient))
-	registry.Register(coretools.NewGitLabMRGetTool(coreClient))
-	registry.Register(coretools.NewGitLabMRDiffTool(coreClient))
-	registry.Register(coretools.NewGitLabCommentTool(coreClient))
+	act(coretools.NewGitHubPRGetTool(coreClient))
+	act(coretools.NewGitHubPRDiffTool(coreClient))
+	act(coretools.NewGitHubCommentTool(coreClient))
+	act(coretools.NewGitHubRequestChangesTool(coreClient))
+	act(coretools.NewGitLabMRGetTool(coreClient))
+	act(coretools.NewGitLabMRDiffTool(coreClient))
+	act(coretools.NewGitLabCommentTool(coreClient))
 }

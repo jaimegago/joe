@@ -9,13 +9,14 @@ import (
 	mysqladapter "github.com/jaimegago/joe/internal/adapters/datastore/mysql"
 	postgresadapter "github.com/jaimegago/joe/internal/adapters/datastore/postgres"
 	redisadapter "github.com/jaimegago/joe/internal/adapters/datastore/redis"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
 // --- PostgreSQL ---
 
 func (a *Accessor) PostgresStat(ctx context.Context, principal rbac.Principal, sourceID string) (*postgresadapter.Stat, error) {
-	ad, err := guard[postgresadapter.PostgreSQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "postgres")
+	ad, err := guard[postgresadapter.PostgreSQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "stats"}, "postgres")
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +24,7 @@ func (a *Accessor) PostgresStat(ctx context.Context, principal rbac.Principal, s
 }
 
 func (a *Accessor) PostgresQuery(ctx context.Context, principal rbac.Principal, sourceID, rawSQL string) ([]map[string]any, error) {
-	ad, err := guard[postgresadapter.PostgreSQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "postgres")
+	ad, err := guard[postgresadapter.PostgreSQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "database"}, "postgres")
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +34,7 @@ func (a *Accessor) PostgresQuery(ctx context.Context, principal rbac.Principal, 
 // --- MySQL ---
 
 func (a *Accessor) MySQLStat(ctx context.Context, principal rbac.Principal, sourceID string) (*mysqladapter.Stat, error) {
-	ad, err := guard[mysqladapter.MySQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "mysql")
+	ad, err := guard[mysqladapter.MySQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "stats"}, "mysql")
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func (a *Accessor) MySQLStat(ctx context.Context, principal rbac.Principal, sour
 }
 
 func (a *Accessor) MySQLQuery(ctx context.Context, principal rbac.Principal, sourceID, rawSQL string) ([]map[string]any, error) {
-	ad, err := guard[mysqladapter.MySQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "mysql")
+	ad, err := guard[mysqladapter.MySQLAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "database"}, "mysql")
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +52,7 @@ func (a *Accessor) MySQLQuery(ctx context.Context, principal rbac.Principal, sou
 // --- Redis ---
 
 func (a *Accessor) RedisInfo(ctx context.Context, principal rbac.Principal, sourceID, section string) (map[string]string, error) {
-	ad, err := guard[redisadapter.RedisAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "redis")
+	ad, err := guard[redisadapter.RedisAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "info", Name: section}, "redis")
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +60,7 @@ func (a *Accessor) RedisInfo(ctx context.Context, principal rbac.Principal, sour
 }
 
 func (a *Accessor) RedisSlowLog(ctx context.Context, principal rbac.Principal, sourceID string, count int64) ([]redisadapter.SlowLogEntry, error) {
-	ad, err := guard[redisadapter.RedisAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "redis")
+	ad, err := guard[redisadapter.RedisAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "slowlog"}, "redis")
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func (a *Accessor) RedisSlowLog(ctx context.Context, principal rbac.Principal, s
 }
 
 func (a *Accessor) RedisDBSize(ctx context.Context, principal rbac.Principal, sourceID string) (int64, error) {
-	ad, err := guard[redisadapter.RedisAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "redis")
+	ad, err := guard[redisadapter.RedisAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "dbsize"}, "redis")
 	if err != nil {
 		return 0, err
 	}
@@ -77,7 +78,7 @@ func (a *Accessor) RedisDBSize(ctx context.Context, principal rbac.Principal, so
 // --- MongoDB ---
 
 func (a *Accessor) MongoDBServerStatus(ctx context.Context, principal rbac.Principal, sourceID string) (map[string]any, error) {
-	ad, err := guard[mongodbadapter.MongoDBAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "mongodb")
+	ad, err := guard[mongodbadapter.MongoDBAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "serverstatus"}, "mongodb")
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +86,7 @@ func (a *Accessor) MongoDBServerStatus(ctx context.Context, principal rbac.Princ
 }
 
 func (a *Accessor) MongoDBReplicaStatus(ctx context.Context, principal rbac.Principal, sourceID string) (map[string]any, error) {
-	ad, err := guard[mongodbadapter.MongoDBAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "mongodb")
+	ad, err := guard[mongodbadapter.MongoDBAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "replicastatus"}, "mongodb")
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +94,7 @@ func (a *Accessor) MongoDBReplicaStatus(ctx context.Context, principal rbac.Prin
 }
 
 func (a *Accessor) MongoDBCurrentOp(ctx context.Context, principal rbac.Principal, sourceID string) (map[string]any, error) {
-	ad, err := guard[mongodbadapter.MongoDBAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "mongodb")
+	ad, err := guard[mongodbadapter.MongoDBAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "operations"}, "mongodb")
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +104,7 @@ func (a *Accessor) MongoDBCurrentOp(ctx context.Context, principal rbac.Principa
 // --- Kafka ---
 
 func (a *Accessor) KafkaTopics(ctx context.Context, principal rbac.Principal, sourceID string) ([]kafkaadapter.TopicInfo, error) {
-	ad, err := guard[kafkaadapter.KafkaAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "kafka")
+	ad, err := guard[kafkaadapter.KafkaAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "topics"}, "kafka")
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +112,7 @@ func (a *Accessor) KafkaTopics(ctx context.Context, principal rbac.Principal, so
 }
 
 func (a *Accessor) KafkaBrokers(ctx context.Context, principal rbac.Principal, sourceID string) ([]kafkaadapter.BrokerInfo, error) {
-	ad, err := guard[kafkaadapter.KafkaAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "kafka")
+	ad, err := guard[kafkaadapter.KafkaAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "brokers"}, "kafka")
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +120,7 @@ func (a *Accessor) KafkaBrokers(ctx context.Context, principal rbac.Principal, s
 }
 
 func (a *Accessor) KafkaConsumerGroups(ctx context.Context, principal rbac.Principal, sourceID string) ([]kafkaadapter.ConsumerGroupInfo, error) {
-	ad, err := guard[kafkaadapter.KafkaAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "kafka")
+	ad, err := guard[kafkaadapter.KafkaAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "consumergroups"}, "kafka")
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +130,7 @@ func (a *Accessor) KafkaConsumerGroups(ctx context.Context, principal rbac.Princ
 // --- Elasticsearch ---
 
 func (a *Accessor) ElasticsearchClusterHealth(ctx context.Context, principal rbac.Principal, sourceID string) (*elasticsearchadapter.ClusterHealth, error) {
-	ad, err := guard[elasticsearchadapter.ElasticsearchAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "elasticsearch")
+	ad, err := guard[elasticsearchadapter.ElasticsearchAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "clusterhealth"}, "elasticsearch")
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +138,7 @@ func (a *Accessor) ElasticsearchClusterHealth(ctx context.Context, principal rba
 }
 
 func (a *Accessor) ElasticsearchListIndices(ctx context.Context, principal rbac.Principal, sourceID, pattern string) ([]elasticsearchadapter.IndexInfo, error) {
-	ad, err := guard[elasticsearchadapter.ElasticsearchAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "elasticsearch")
+	ad, err := guard[elasticsearchadapter.ElasticsearchAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "indices", Name: pattern}, "elasticsearch")
 	if err != nil {
 		return nil, err
 	}

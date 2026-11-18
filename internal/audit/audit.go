@@ -3,25 +3,34 @@
 // Identity & Authentication design (docs/reference/joe-identity-design.md §2.6),
 // Phase F: every authorization decision the accessor makes — and every
 // regime/captain transition — is recorded as one row in the audit_log
-// table. The repository exposes ONLY an Insert path; there is no Update or
-// Delete method (code-level append-only). Migration 015 adds SQLite
-// triggers that ABORT any UPDATE or DELETE against the same table
-// (database-level append-only). The two enforcements are deliberately
-// redundant.
+// table. The write surface (Repository) exposes ONLY an Insert path; there is
+// no Update or Delete method (code-level append-only). Migration 015 adds
+// SQLite triggers that ABORT any UPDATE or DELETE against the same table
+// (database-level append-only), and VerifyAppendOnly proves at boot, on
+// whatever store was opened, that the database refuses both (D-0171). The
+// enforcements are deliberately redundant.
 //
-// Failure posture (docs/reference/joe-identity-design.md §4):
+// The one read surface is TrailReader (trail.go): a session's act entries, in
+// the order they were written. It is a separate interface so that nothing
+// holding the write surface can read, and nothing holding the read surface can
+// write.
 //
-//   - Mutating actions (mutate, delete, and every transition row) FAIL
-//     CLOSED — if the audit row cannot be written, the action does not
-//     proceed. The accessor returns the audit-write error to its caller;
-//     a transition site likewise refuses to perform the mutation.
+// Failure posture (docs/reference/joe-identity-design.md §4, as amended by
+// D-0169):
 //
-//   - Reads (read, query) FAIL OPEN — the action proceeds even when the
-//     audit row cannot be written. The failure is logged at WARN with all
-//     fields needed to reconstruct the missing row from the operational
-//     log; availability of read endpoints is preferred over a hard halt
-//     when the audit store is unhealthy. This is a deliberate tradeoff,
-//     stated explicitly in §4.
+//   - An act against a managed system — read, query, mutate, delete — is NOT
+//     TAKEN when its audit row cannot be written. The accessor returns the
+//     audit-write error to its caller and resolves no adapter. Joe stops
+//     investigating while its audit store is failing; that cost is accepted.
+//
+//   - Every transition row and every configuration mutation likewise fails
+//     CLOSED — if the audit row cannot be written, the mutation does not
+//     proceed.
+//
+//   - Reads of Joe's own authorization configuration on the admin surface
+//     (zone.read, policy.read, …) still fail OPEN: the read proceeds and the
+//     failure is logged loudly. They are not acts against a managed system and
+//     D-0169 does not reach them.
 //
 // The split is enforced by FailurePosture (below) so every audit caller
 // makes the same decision the same way.
@@ -517,8 +526,14 @@ type Event struct {
 	Decision    Decision
 	Reason      string
 	Kind        Kind
+	// SessionID is the agent-loop session an act belongs to (the session_id
+	// column, migration 036). Set only on an infra_access row that records an
+	// act taken inside an agent loop; "" is stored as NULL, which reads as
+	// "belongs to no session's trail".
+	SessionID string
 	// Context is a JSON blob carrying kind-specific specifics
 	// (declared_kind, session_id, captain_id, transfer initiator, etc.).
+	// On an infra_access row that records an act it is an encoded Act.
 	// "" is stored as the default "{}" by the repository.
 	Context string
 }
@@ -581,9 +596,10 @@ const (
 	FailOpen
 )
 
-// PostureForAction returns the §4 default posture for an action: read-class
-// actions are FailOpen (the caller proceeds), everything else FailClosed
-// (the caller aborts). Call sites that HONOR FailurePosture's return — i.e.
+// PostureForAction returns the §4 default posture for an action: the
+// admin-surface configuration reads are FailOpen (the caller proceeds),
+// everything else — every act against a managed system included, reads and
+// queries with it (D-0169) — FailClosed (the caller aborts). Call sites that HONOR FailurePosture's return — i.e.
 // propagate it and act on it — pass this so the logged wording matches the
 // action's split. Sites that always discard the return pass FailOpen
 // directly. Keeping the read/mutate classification here means it lives in
@@ -596,12 +612,15 @@ func PostureForAction(action string) Posture {
 }
 
 // FailurePosture decides what to do when an audit Insert fails. It
-// implements the §4 split: mutating actions fail CLOSED, reads fail OPEN.
-// One helper, called from every audit caller, so the split cannot drift.
+// implements the §4 split as D-0169 amended it: an act against a managed
+// system, a transition and a configuration mutation fail CLOSED; only the
+// admin-surface configuration reads fail OPEN. One helper, called from every
+// audit caller, so the split cannot drift.
 //
 // Returns nil iff the action should proceed (audit succeeded, or the
-// action is a read and the failure is fail-open). Returns the original
-// audit error iff the action should be aborted (fail-closed). The return
+// action is an admin-surface configuration read and the failure is
+// fail-open). Returns the original audit error iff the action should be
+// aborted (fail-closed). The return
 // value and the log LEVEL are derived from the action — NOT from posture —
 // so the §4 split cannot be overridden by a caller.
 //
@@ -628,14 +647,13 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 	// drift). A fail-open caller logs loudly but says PROCEEDED; a
 	// fail-closed caller says ABORTED.
 	// Wording per the §4 fail-open/fail-closed split (comment, not log text).
-	msg := "AUDIT WRITE FAILED — mutating action ABORTED (fail-closed)"
+	msg := "AUDIT WRITE FAILED — action ABORTED (fail-closed)"
 	if posture == FailOpen {
 		msg = "AUDIT WRITE FAILED — action PROCEEDED without audit row (fail-open-but-loud); investigate audit store"
 	}
 	if isFailOpen(action) {
-		// Reads and queries proceed despite a missing audit row. The
-		// failure is logged loudly per §4 ("a read proceeds even if its
-		// audit row cannot be written, with a loud operational alert").
+		// An admin-surface configuration read proceeds despite a missing
+		// audit row. The failure is logged loudly per §4.
 		slog.Warn(msg,
 			"where", where,
 			"action", action,
@@ -643,7 +661,8 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 		)
 		return nil
 	}
-	// Mutating actions and every transition row fail CLOSED at the return:
+	// Acts against a managed system (reads included, D-0169), mutating
+	// actions and every transition row fail CLOSED at the return:
 	// the original audit error is returned to the caller, which either
 	// surfaces it (fail-closed, aborting the mutation) or discards it
 	// (fail-open-but-loud, proceeding). The posture above already named the
@@ -656,30 +675,35 @@ func FailurePosture(ctx context.Context, action string, auditErr error, where st
 	return auditErr
 }
 
-// isFailOpen reports whether the given action verb is read-class for the
-// purposes of the §4 failure split. Read-class: the infra read verbs "read"
-// and "query" (the values of rbac.ActionRead / rbac.ActionQuery), and the
-// D-0013 admin-surface read verbs (zone.read, policy.read, component_zone.read,
-// admin.read, principal.read), the D-0026 credential-status read verb
-// (credential_status.read), the CC-04 read-promotion read verb
-// (read_promotion.read), and the read-posture read verb (read_posture.read).
-// Mutate-class: everything else, including all transition verbs, the admin
+// isFailOpen reports whether the given action verb fails OPEN under the §4
+// failure split: the action proceeds when its audit row cannot be written.
+//
+// Fail-open: the D-0013 admin-surface read verbs (zone.read, policy.read,
+// component_zone.read, admin.read, principal.read), the D-0026
+// credential-status read verb (credential_status.read), the CC-04
+// read-promotion read verb (read_promotion.read), and the read-posture read
+// verb (read_posture.read). Each is a read of Joe's own authorization
+// configuration, not an act against a managed system.
+//
+// Fail-closed: everything else. That includes the infra verbs "read" and
+// "query" (the values of rbac.ActionRead / rbac.ActionQuery) — until D-0169
+// they were fail-open, and an act whose audit row could not be written
+// proceeded and left no row. An act whose entry cannot be written is not
+// taken, reads included. It also includes all transition verbs, the admin
 // mutations (zone.create, zone.update, zone.delete, policy.grant,
 // policy.revoke, component_zone.assign, component_zone.unassign, admin.grant,
 // admin.revoke, principal.disable, principal.enable), and the admin
 // gate-denial verb (admin.access_denied is a deny event, not a read — its
 // absence must be loud, matching captaingate's fail-closed refusal posture).
 //
-// The two infra verbs are compared as string literals rather than via
-// rbac.ActionRead / rbac.ActionQuery so this package does NOT import
-// internal/rbac: internal/rbac now writes its admin-mutation audit rows in the
-// same transaction as the mutation (via InsertTx), so rbac imports audit, and
-// an audit→rbac import would close a cycle. The literals are the canonical
-// values of those constants and are asserted to stay in sync by audit_test.go.
+// This package does NOT import internal/rbac: internal/rbac writes its
+// admin-mutation audit rows in the same transaction as the mutation (via
+// InsertTx), so rbac imports audit, and an audit→rbac import would close a
+// cycle. audit_test.go asserts the two infra verbs' posture against the
+// rbac constants.
 func isFailOpen(action string) bool {
 	switch action {
-	case "read", "query",
-		ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminComponentZoneRead,
+	case ActionAdminZoneRead, ActionAdminPolicyRead, ActionAdminComponentZoneRead,
 		ActionAdminAdminRead, ActionAdminPrincipalRead, ActionAdminCredentialStatusRead,
 		ActionAdminReadPromoteRead, ActionAdminReadPostureRead:
 		return true
