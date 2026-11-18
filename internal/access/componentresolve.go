@@ -250,11 +250,11 @@ func (a *Accessor) ComponentBindings(ctx context.Context, principal rbac.Princip
 			permitted[componentID] = false
 			return false, nil
 		default:
-			// A non-denial error from permit is an audit-write failure on a
-			// fail-closed path. Reads are fail-open, so this branch is not
-			// reachable for ActionRead today; propagate rather than silently
-			// treating an infrastructure failure as a denial, which would
-			// present a broken audit trail as an empty answer.
+			// A non-denial error from permit is an audit-write failure, and
+			// permit fails closed for every action, reads included (D-0169).
+			// Propagate rather than silently treating an infrastructure
+			// failure as a denial, which would present a broken audit trail
+			// as an empty answer.
 			return false, err
 		}
 	}
@@ -432,11 +432,11 @@ type resolveOutcome struct {
 // all-permitted one, so the trail reads as a per-call record rather than as an
 // exception log where absence has to be interpreted.
 //
-// It follows the accessor's §4 failure split for reads: an audit-write failure
-// is logged loudly and the call PROCEEDS. A resolve answer withheld because a
-// bookkeeping row could not be written would be a worse outcome than a gap in
-// the trail, and the authorization decisions themselves — the rows that matter
-// for a grant — are written by permit under the same posture.
+// An audit-write failure here is logged loudly and the call PROCEEDS. This row
+// is bookkeeping written after the answer was assembled from Joe's own graph:
+// it gates nothing and records no act against a managed system, so D-0169's
+// refusal does not reach it. The authorization decisions themselves — the
+// rows that matter for a grant — are written by permit, which fails closed.
 func (a *Accessor) auditComponentResolveOutcome(ctx context.Context, principal rbac.Principal, out resolveOutcome) {
 	if a.auditRepo == nil {
 		return

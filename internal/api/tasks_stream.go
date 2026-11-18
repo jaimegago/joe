@@ -138,6 +138,7 @@ func (h *taskHandler) handleTaskStream(w http.ResponseWriter, r *http.Request) {
 	// usage recorder can read them when persisting each per-call row.
 	ctx = agentctx.WithSessionID(ctx, prepared.sessionID)
 	ctx = agentctx.WithTaskID(ctx, taskID)
+	ctx = withTaskAuditScope(ctx, prepared.sessionID, taskID)
 
 	start := time.Now()
 	answer, runErr := prepared.agent.Run(ctx, prepared.session, req.Message)

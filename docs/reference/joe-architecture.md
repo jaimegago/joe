@@ -117,6 +117,7 @@ GET  /api/v1/registry/{oci,artifactory,ecr}/{id}/...
 POST /api/v1/tasks                         Execute an agentic turn (non-streaming)
 POST /api/v1/tasks/stream                  Execute an agentic turn (SSE streaming)
 GET/POST /api/v1/sessions[/{id}...]        Owner-scoped chat sessions, messages, findings, runs
+GET  /api/v1/sessions/{id}/audit-trail     The acts a session's agent loop took against managed systems, in write order (read-only)
 
 # Emergency shutdown
 POST /api/v1/panic                         Trigger emergency shutdown
@@ -390,7 +391,7 @@ graph_nodes/edges     The graph store tables (above)
 security_zones / component_zone_assignments / rbac_policies   Zone-scoped RBAC
 read_posture / auto_promote_reads   Read governance singletons
 cluster_panic_state   Single-row panic state (id=1) — there is no panic.state file
-audit_log             Append-only audit trail
+audit_log             Append-only audit trail; an act row names its session (session_id)
 ```
 
 ---

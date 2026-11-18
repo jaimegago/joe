@@ -14,6 +14,197 @@ unit of work that produced it.
 
 ---
 
+## D-0171 — An act the agent loop takes against a managed system leaves one audit entry naming its session, operation, target, reason and trigger; a session's entries are read back in write order; Joe does not start on a store whose audit log can be rewritten
+
+- Date: 2026-11-18
+- Status: accepted
+- Session: joe-audit-trail
+- Decision: the audit log can answer, for one agent-loop session, **what Joe did, to
+  what, why the model said it did it, and what caused it** — and hand that answer to a
+  caller who holds the session id.
+  - **An act** is one call that reaches an infrastructure adapter through the guarded
+    accessor. It leaves exactly one `infra_access` row, written by `permit` before the
+    adapter is resolved, allow or deny alike. That row's `context` is an encoded
+    `audit.Act`.
+  - **The operation and its target** are declared by the dispatch method, as an
+    `audit.Operation` literal beside the adapter call it gates, at the resolution a
+    Kubernetes audit event records them: verb, API group, resource, subresource, object
+    name, namespace. The argument is required by `guard` and `observeResolve`, so a
+    dispatch cannot reach an adapter without saying what it is about to do, and an
+    operation with no verb or no resource is refused before any decision. Kubernetes
+    dispatches resolve the caller's resource name through the adapter's own resolver, so
+    the row carries the group and plural resource the API server sees. Other managed
+    systems use the same fields with the closest reading their API allows.
+  - **The session** is the `session_id` Joe returns to its caller. It is stamped on the
+    context as an `audit.Scope` by the code that starts an agent loop — the `/tasks` and
+    `/tasks/stream` handlers and the Auto Joe run service — and by nothing else. It is
+    deliberately **not** `agentctx.SessionID`, which every route also populates from the
+    caller-supplied `X-Joe-Session-ID` header: a request that merely names a session adds
+    nothing to that session's trail. The session is also a column, `audit_log.session_id`
+    (migration 036, indexed with `id`), `NULL` on every row written outside a loop.
+  - **The reason** is the model's own (D-0170).
+  - **The trigger** is one of `operator_request`, `alert`, `policy`, `prior_finding`,
+    with a reference. A trigger the model declares with the tool call is recorded as
+    declared when its type is in that vocabulary and it carries a reference. Otherwise
+    the row records what opened the session: `operator_request` referenced as
+    `task/<task_id>` for a task turn; for an Auto Joe run, `operator_request` as
+    `run/<run_id>` when an operator triggered it and `policy` as `schedule/<schedule_id>`
+    when a schedule fired it. The row says which it was (`trigger.source`: `model` or
+    `session`). **This fallback rule was chosen in execution; the order it was executed
+    under required a trigger and did not say where an undeclared one comes from.** The
+    session's opening trigger is a fact Joe holds, not a statement made on the model's
+    behalf, which is why it is admissible here where a substitute reason is not.
+  - **The read.** `GET /api/v1/sessions/{id}/audit-trail` returns a session's acts in
+    write order (ascending row id). It sits behind edge authentication and takes the
+    session's own read posture, unchanged: a session is readable by any authenticated
+    principal, and the trail discloses less than `GET /sessions/{id}/messages` already
+    does. It writes no audit row, so asking for a trail never changes one. Its three
+    answers stay apart: a trail (possibly empty) is `200`, a session Joe does not hold is
+    `404`, a failed read is `500`. A row that does not decode fails the read; a trail is
+    never returned short.
+  - **Nothing the agent loop or any API can reach alters or deletes an entry.** The
+    write surface (`audit.Repository`) declares two inserts and no read; the read surface
+    (`audit.TrailReader`) declares one read and no write; no tool and no route holds
+    anything else; the database refuses `UPDATE` and `DELETE` by trigger. `joe db
+    restore` replaces the whole database file offline and is an operator act, outside
+    this claim.
+  - **Joe does not start on a store whose audit log can be rewritten.** At boot, after
+    migration, `audit.VerifyAppendOnly` writes a probe row inside a transaction, attempts
+    an `UPDATE` and a `DELETE` of it, requires the database to refuse each and the row to
+    read back intact, and rolls back. It is a behavioural probe, so it reads the same on
+    every SQL store and does not depend on how a dialect spells a trigger. A store that
+    accepts either statement, or on which the probe cannot run, is refused.
+- PostgreSQL, established and not assumed (2026-11-18, PostgreSQL 15): the embedded
+  migration set does **not** apply — `Store.Migrate` fails in `001_initial` with
+  `syntax error at or near "AUTOINCREMENT" (SQLSTATE 42601)` — so Joe does not start on
+  PostgreSQL, no `audit_log` exists there, and there is no entry to alter. That is D-0085
+  measured rather than read. The probe itself was run against PostgreSQL on an
+  `audit_log` built by hand in that dialect: it passes with a trigger function refusing
+  both statements and refuses, naming the statement, with either trigger dropped. So the
+  day the migration set is ported, a port that omits the append-only enforcement cannot
+  serve. `internal/audit/postgres_test.go` holds both checks behind
+  `JOE_TEST_POSTGRES_DSN`; no CI job provides a PostgreSQL, so they are run by hand and a
+  green CI says nothing about them.
+- What an entry does not cover: calls that reach no managed system through the accessor
+  leave no act entry — the four tools that read only Joe's own stores (`list_components`,
+  `resolve_component`, `graph_query`, `graph_related`) and the shared network diagnostics
+  (`dns_lookup`, `http_request`, `web_search`, the connectivity and traceroute tools). A
+  call the executor refuses before the accessor — the write floor, a scope violation, the
+  incident gate — is not an act and leaves no act entry. The autonomous refresh resolves
+  adapters through a seam that records the decision and no operation. An operator-facing
+  way to reach the trail, and audit coverage beyond the agent loop, are not decided here
+  (joe-pm `threads/auditability-design.md`).
+- Basis: joe-pm `threads/joe-audit-trail.md` § What must be true, items 1 to 3. Pinned by
+  `TestAct_KubernetesDispatchRecordsWhatAnAuditEventRecords`,
+  `TestAct_SessionComesFromTheLoopScopeNotTheRequestHeader`,
+  `TestGuard_EveryDispatchDeclaresItsOperation`, `TestActFor_TriggerRule`,
+  `TestSessionTrail_ReturnsOneSessionsActsInWriteOrder`,
+  `TestTrailReader_DeclaresOneReadAndNoWrite`, `TestSessionAuditTrail_IsReadOnly`,
+  `TestMigration036_AuditSession_UpDownUp_RoundTrip`,
+  `TestVerifyAppendOnly_RefusesAStoreThatAcceptsEither`,
+  `TestCoreRegistry_ActDeclarationCoversManagedSystemTools`, and end to end by
+  `TestE2E_AuditTrail`.
+- Supersedes: nothing. It extends D-0009 (one append-only row at the decision point) with
+  what the row carries and how it is read; the row is still written where D-0009 put it.
+
+---
+
+## D-0170 — The reason on an audit entry is the model's own, stated with the tool call and recorded verbatim; Joe writes none on the model's behalf and reconstructs none
+
+- Date: 2026-11-18
+- Status: accepted
+- Session: joe-audit-trail
+- Decision: every tool that acts against a managed system carries three optional
+  arguments beside its own — `reason`, `trigger`, `trigger_ref` — added to its schema by
+  `tools.WithActDeclaration`. The model states them with the call. The tool layer lifts
+  them off the arguments before the tool runs, so no tool sees them, and stamps them on
+  the context for the duration of that call; the accessor records them on the act's
+  audit row (D-0171).
+  - **The reason is recorded verbatim**: no trimming, no normalising, no truncation.
+  - **Joe writes no reason on the model's behalf.** There is no default text, and the
+    assistant message that accompanied the call is not used in its place.
+  - **Joe reconstructs none afterwards.** The entry is written when the act is taken and
+    is append-only; nothing derives a reason from the transcript later.
+  - **When the model gives none, the call is made and the entry records an empty
+    reason.** The argument is not in any tool's `required` list and nothing refuses a
+    call for lacking it. An argument that is absent, empty, or not a string is the model
+    stating nothing, and is recorded as nothing. The field is present and empty on such
+    an entry, never omitted: the entry says the model gave none.
+  - The declaration is asked for in the three parameter descriptions
+    (`internal/prompts/act.go`) and nowhere else; the task system prompt is unchanged.
+- Rationale: an audit entry's reason is evidence only if it is the actor's. A reason Joe
+  composes, or lifts from prose that surrounded several calls at once, would make every
+  entry carry one and none of them mean anything — and a batch of calls sharing one
+  narration would carry one identical statement on each. Refusing a call that states no
+  reason would turn an audit field into a gate on investigation, which the maintainer
+  did not choose.
+- Consequences: how often entries carry a reason is a property of the model in use, not
+  of Joe, and an evaluation that scores reasons will score empty ones as absent. That is
+  the measurement, not a defect. The three descriptions are repeated on every
+  managed-system tool definition, which is a fixed addition to each request's tool
+  prefix: measured on 2026-11-18 on a JSON rendering of a task turn's tool schemas,
+  about 24 kB on top of 56 kB. They are worded as tersely as they are for that reason
+  (a sentence-length wording measured about 40 kB), and the cost is the price of a
+  reason stated per call rather than per turn.
+- Basis: settled by the maintainer on 2026-11-18, in the words "Call, record empty"
+  (joe-pm `threads/joe-audit-trail.md` § Decided in joe, not here; item 7 of § What must
+  be true). Pinned by `TestWithActDeclaration_LiftsTheDeclarationOffTheArguments`,
+  `TestWithActDeclaration_NothingStatedIsNothingRecorded`,
+  `TestActFor_ReasonIsTheModelsVerbatimOrEmpty`,
+  `TestAct_CallWithNoReasonIsMadeAndRecordsAnEmptyReason`, and end to end by
+  `TestE2E_AuditTrail`.
+- Supersedes: nothing. Until this decision an `infra_access` row carried no reason of the
+  model's at all; its `reason` column is, and remains, the policy engine's tag for the
+  decision.
+
+---
+
+## D-0169 — An act whose audit entry cannot be written is not taken, reads included; reverses the fail-open read of D-0009
+
+- Date: 2026-11-18
+- Status: accepted
+- Session: joe-audit-trail
+- Decision: when the guarded accessor cannot write the audit row for a decision, it
+  returns the audit-write error and resolves no adapter — **for every action**. Until
+  now that held for `mutate` and `delete` only; a `read` or `query` whose row could not
+  be written proceeded, and the row was lost. Reads and queries now take the same
+  posture as mutations.
+  - It holds at the accessor's `permit` chokepoint, so it holds for every caller of it:
+    the agent loop's tools, the HTTP routes that read a managed system, the autonomous
+    refresh, and the per-component permits of component resolution.
+  - **Joe stops investigating while its audit store is failing.** That cost is accepted.
+  - An HTTP caller receives `503`; a tool call receives a tool error that says the act
+    was not taken, so the model is told why.
+- What it does not change, named because the decision's words are "an act":
+  - **Admin-surface reads of Joe's own authorization configuration** (`zone.read`,
+    `policy.read`, `component_zone.read`, `admin.read`, `principal.read`,
+    `credential_status.read`, `read_promotion.read`, `read_posture.read`) still fail open
+    and loud. They are not acts against a managed system. Whether they should follow is
+    a separate decision, unmade.
+  - **The auth-login rows** (`oidc_login`, `break_glass_use`) keep their
+    fail-open-but-loud posture: an audit outage must not lock administrators out.
+  - **The loop's own limit rows and the component-resolve outcome row** are written
+    after the event they record and gate nothing.
+- Rationale: the fail-open read was a stated judgment — availability of reads over
+  completeness of the trail (identity design §4). It is the wrong way round for an agent
+  whose trail is handed to someone else to check: a read the trail omits is a hole
+  nobody can see from the trail, and it opens exactly when the store is unhealthy. An
+  agent that cannot record what it does should not be doing it.
+- Basis: settled by the maintainer on 2026-11-18, in the words "Refuse the read" (joe-pm
+  `threads/joe-audit-trail.md` § Decided in joe, not here; item 6 of § What must be
+  true). Mechanism: `audit.isFailOpen` no longer admits the infra verbs. Pinned by
+  `TestRead_NotTakenWhenAuditEntryCannotBeWritten` (with its healthy-store control in
+  the same test), `TestFailurePosture_FailClosedOnInfraRead`,
+  `TestFailurePosture_FailOpenOnAdminConfigRead`, `TestPhaseF_FailClosedOnMutate`
+  (unchanged), and `TestWriteAccessError_AuditRefusalIs503`.
+- Supersedes: the fail-open-for-reads half of D-0009's failure posture, as it applies to
+  acts against a managed system. D-0009 is not edited in place.
+- Site-claims impact: the joeagent.dev safety page states the reversed posture (an audit
+  failure does not block observation). `docs/project/SITE-CLAIMS.md` is updated; the
+  published copy is not, and needs revising.
+
+---
+
 ## D-0168 — Registration accepts exactly the routing fields each type declares, and refuses an absent registration-required locator; amends D-0057
 
 - Date: 2026-11-12

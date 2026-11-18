@@ -120,20 +120,29 @@ test(s)** · **binding note** (where applicable).
   engine ignores the posture) and `TestGuard_PolicyEngineConstructedOnlyAtCompositionRoot` (no
   `rbac.NewPolicyEngine*` construction outside `cmd/joe`/tests).
 
-### The guarded accessor is the audit point, fail-closed on mutate and fail-open on read, over an insert-only repository
+### The guarded accessor is the audit point, fail-closed for every act, over an insert-only repository
 
 - **Claim.** Every read and mutation flows through one guarded accessor that writes an
-  append-only audit record; an audit-store failure fails **closed** for mutations and **open**
-  for reads; the audit repository API is insert-only, with the DB-level immutability caveat
-  that it rests on SQLite triggers, not a structural impossibility.
+  append-only audit record; an audit-store failure fails **closed** for mutations and for
+  reads alike — an act whose audit entry cannot be written is not taken; the audit
+  repository API is insert-only, with the DB-level immutability caveat that it rests on
+  SQLite triggers, not a structural impossibility.
 - **Mechanism.** `internal/access` guarded accessor on both HTTP and agent paths; the
   append-only audit repository surface (`internal/audit`); migration-015 SQLite triggers
-  blocking UPDATE/DELETE on the audit table.
-- **Pinning tests.** `TestPhaseF_FailClosedOnMutate`, `TestPhaseF_FailOpenOnRead`,
+  blocking UPDATE/DELETE on the audit table, proved against the opened database at every
+  boot by `audit.VerifyAppendOnly`.
+- **Pinning tests.** `TestPhaseF_FailClosedOnMutate`,
+  `TestRead_NotTakenWhenAuditEntryCannotBeWritten`,
+  `TestFailurePosture_FailClosedOnInfraRead`,
   `TestPhaseF_AllowedAccessProducesOneAllowAuditRow`, `TestRepositoryAPISurface_AppendOnly`,
-  `TestMigration015_TriggerBlocksUpdate`, `TestMigration015_TriggerBlocksDelete`.
+  `TestMigration015_TriggerBlocksUpdate`, `TestMigration015_TriggerBlocksDelete`,
+  `TestVerifyAppendOnly_RefusesAStoreThatAcceptsEither`.
 - **Binding note.** The copy states the SQLite-trigger caveat explicitly; if the audit store
   moves off SQLite the immutability guarantee's basis (and its copy) changes.
+- **Open revision (2026-11-18, D-0169).** The mechanism changed and the published copy has
+  not: the joeagent.dev safety page still says reads take the opposite posture and that an
+  audit failure does not block observation. Since D-0169 it does. The copy is stale until
+  that page is revised; this entry describes the mechanism as it now is.
 
 ### The incident gate is deny-only, adds captain semantics, and has a single shared implementation
 
@@ -240,7 +249,7 @@ test(s)** · **binding note** (where applicable).
   paths and writes the decision to the append-only audit record.
 - **Pinning tests.** `TestEveryDispatchMethodDeclaresAnAction` (structural: every
   principal-gated dispatch declares its action), `TestPhaseF_FailClosedOnMutate`,
-  `TestPhaseF_FailOpenOnRead`.
+  `TestRead_NotTakenWhenAuditEntryCannotBeWritten`.
 - **Binding note.** The claim is scoped to the **running daemon's request paths**: every
   authenticated caller is gated. It has never covered an operator with filesystem access to
   the database, who can already replace the whole store (`joe db restore`). The offline
@@ -851,3 +860,31 @@ and becomes load-bearing.
 - **Binding note.** Mechanism-bound to the page's caution. Resource attributes are redacted
   only where the state lists them by plain name under `sensitive_attributes`
   (`TestAdapter_Resources_SensitiveRedaction`); the page deliberately does not claim that.
+
+---
+
+## API reference — `/api-reference/`
+
+### A session's audit trail is read back in write order, read-only, and its reasons are the model's own
+
+- **Claim.** `GET /api/v1/sessions/{id}/audit-trail` returns one entry for each act the
+  session's agent loop took against a managed system, in the order written; reading it
+  writes nothing; an unknown session is `404` and never an empty trail; each entry's
+  `reasoning` is the reason the model stated with the tool call, verbatim, and an empty
+  string when it stated none — Joe writes no reason in the model's place; calls that reach
+  no managed system leave no entry.
+- **Mechanism.** The guarded accessor writes one `infra_access` row per act carrying an
+  encoded act (`internal/audit`, `internal/access`); the session comes from the audit scope
+  the loop's entry points stamp, never from a request header; the reason and trigger come
+  from the act declaration on each managed-system tool (`internal/tools`); the route holds
+  `audit.TrailReader`, which declares one read and no write (`internal/api`). D-0169,
+  D-0170, D-0171.
+- **Pinning tests.** `TestE2E_AuditTrail`,
+  `TestSessionAuditTrail_ReturnsTheSessionsActsInWriteOrder`,
+  `TestSessionAuditTrail_ThreeAnswersStayApart`, `TestSessionAuditTrail_IsReadOnly`,
+  `TestAct_CallWithNoReasonIsMadeAndRecordsAnEmptyReason`,
+  `TestAct_SessionComesFromTheLoopScopeNotTheRequestHeader`,
+  `TestCoreRegistry_ActDeclarationCoversManagedSystemTools`.
+- **Binding note.** Mechanism-bound to the entry shape the page prints. The page describes
+  the route and makes no claim about how often a model states a reason: that is a property of
+  the model in use.

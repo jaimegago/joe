@@ -4,13 +4,14 @@ import (
 	"context"
 
 	falcoadapter "github.com/jaimegago/joe/internal/adapters/security/falco"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
 // --- Falco ---
 
 func (a *Accessor) FalcoListEvents(ctx context.Context, principal rbac.Principal, sourceID, priority, source, rule string, limit int) ([]falcoadapter.Event, error) {
-	ad, err := guard[falcoadapter.FalcoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "falco")
+	ad, err := guard[falcoadapter.FalcoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "events"}, "falco")
 	if err != nil {
 		return nil, err
 	}
@@ -18,7 +19,7 @@ func (a *Accessor) FalcoListEvents(ctx context.Context, principal rbac.Principal
 }
 
 func (a *Accessor) FalcoListRules(ctx context.Context, principal rbac.Principal, sourceID string) ([]falcoadapter.Rule, error) {
-	ad, err := guard[falcoadapter.FalcoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "falco")
+	ad, err := guard[falcoadapter.FalcoAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "rules"}, "falco")
 	if err != nil {
 		return nil, err
 	}

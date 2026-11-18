@@ -599,3 +599,33 @@ func TestPhaseG_GateIsDenyOnly_RBACAuthorityInvariance(t *testing.T) {
 		t.Errorf("carol should be denied (fixture sanity check)")
 	}
 }
+
+// callIDSpy records the tool call id each Execute was handed.
+type callIDSpy struct{ seen []string }
+
+func (s *callIDSpy) Execute(ctx context.Context, _ string, _ map[string]any) (any, error) {
+	s.seen = append(s.seen, tools.ToolCallID(ctx))
+	return nil, nil
+}
+
+// TestExecuteBatch_CarriesEachToolCallID: the gate sits between the loop and
+// the executor on every production path, so it is the gate's batch loop that
+// carries each call's id down to the tool. An act's audit entry names the call
+// it belongs to by that id (D-0171); a wrapper that dropped it would leave
+// every entry of a gated loop unjoinable to the transcript.
+func TestExecuteBatch_CarriesEachToolCallID(t *testing.T) {
+	e := newGateEnv(t)
+	spy := &callIDSpy{}
+	wrapper := captaingate.New(spy, e.sess, e.audit)
+
+	ctx := withCtx(e.ctx, "", "alice")
+	if _, err := wrapper.ExecuteBatch(ctx, []tools.ToolCallRequest{
+		{ID: "call-a", Name: "list_components", Args: map[string]any{}},
+		{ID: "call-b", Name: "list_components", Args: map[string]any{}},
+	}); err != nil {
+		t.Fatalf("ExecuteBatch: %v", err)
+	}
+	if len(spy.seen) != 2 || spy.seen[0] != "call-a" || spy.seen[1] != "call-b" {
+		t.Errorf("tool call ids reaching the inner executor = %v, want [call-a call-b]", spy.seen)
+	}
+}

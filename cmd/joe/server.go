@@ -310,6 +310,18 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	// regime/captain transition writes one row here.
 	auditRepo := audit.NewRepository(sqlStore.DB(), sqlStore.Driver())
 
+	// Joe does not serve on a store whose audit log can be rewritten (D-0171).
+	// The probe asks the database Joe just opened to UPDATE and to DELETE a row
+	// of audit_log inside a transaction it rolls back, and requires both to be
+	// refused. It is behavioural, so it reads the same on every SQL store: a
+	// store that reaches this point without the append-only enforcement —
+	// whatever its dialect, however it got that way — stops here instead of
+	// accepting entries it could later lose.
+	if err := audit.VerifyAppendOnly(context.Background(), sqlStore.DB(), sqlStore.Driver()); err != nil {
+		slog.Error("audit log is not append-only on this database; refusing to start", "error", err)
+		return 1
+	}
+
 	// Wire RBAC repository (uses the same SQLite DB, tables created by migration
 	// 006). It is given the audit sink so every RBAC/admin mutation writes its
 	// KindAdminAccess audit row in the same transaction as the mutation itself
@@ -519,6 +531,10 @@ func runServerWithDeps(ctx context.Context, deps serverDeps) int {
 	services.WriteFloor = writeFloor
 	services.RBAC = rbacRepo
 	services.Audit = auditRepo
+	// The audit log's one read surface: a session's act entries, in write
+	// order (D-0171). A separate value from services.Audit on purpose — the
+	// write surface declares no read and this declares no write.
+	services.AuditTrail = audit.NewTrailReader(sqlStore.DB(), sqlStore.Driver())
 	// Identity Stage 3: the admin REST surface (internal/api/admin.go) manages
 	// the identity registry and admin roster. Wire the read path (the registry
 	// repository, satisfied by rbacRepo) and the two orchestration seams it

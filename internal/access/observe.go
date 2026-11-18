@@ -17,6 +17,7 @@ import (
 	prometheusadapter "github.com/jaimegago/joe/internal/adapters/observability/prometheus"
 	splunkadapter "github.com/jaimegago/joe/internal/adapters/observability/splunk"
 	tempoadapter "github.com/jaimegago/joe/internal/adapters/observability/tempo"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/observe"
 	"github.com/jaimegago/joe/internal/rbac"
 )
@@ -30,10 +31,12 @@ import (
 
 // observeResolve enforces the declared action and resolves the base adapter.
 // It is a thin sibling of guard for the type-switch dispatchers below; the
-// action is passed in by each dispatcher so the declaration stays adjacent to
-// the method (design §2.8).
-func (a *Accessor) observeResolve(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action) (adapters.Adapter, error) {
-	if err := a.permitForPrincipal(ctx, principal, sourceID, action); err != nil {
+// action and the operation are passed in by each dispatcher so the
+// declarations stay adjacent to the method (design §2.8). The operation is
+// declared before the adapter's concrete type is known, so it names the
+// category's operation rather than one backend's.
+func (a *Accessor) observeResolve(ctx context.Context, principal rbac.Principal, sourceID string, action rbac.Action, op audit.Operation) (adapters.Adapter, error) {
+	if err := a.permitAct(ctx, principal, sourceID, action, op); err != nil {
 		return nil, err
 	}
 	adapter, err := a.registry.Get(sourceID)
@@ -48,7 +51,7 @@ func (a *Accessor) observeResolve(ctx context.Context, principal rbac.Principal,
 
 // ObserveMetrics runs the metrics query appropriate to the source's adapter.
 func (a *Accessor) ObserveMetrics(ctx context.Context, principal rbac.Principal, sourceID, nativeQuery string, fromUnix, toUnix int64) (raw any, supported bool, err error) {
-	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead)
+	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "metrics"})
 	if err != nil {
 		return nil, false, err
 	}
@@ -72,7 +75,7 @@ func (a *Accessor) ObserveMetrics(ctx context.Context, principal rbac.Principal,
 
 // ObserveLogs runs the logs query appropriate to the source's adapter.
 func (a *Accessor) ObserveLogs(ctx context.Context, principal rbac.Principal, sourceID, nativeQuery string, fromUnix, toUnix int64) (raw any, supported bool, err error) {
-	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead)
+	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "logs"})
 	if err != nil {
 		return nil, false, err
 	}
@@ -93,7 +96,7 @@ func (a *Accessor) ObserveLogs(ctx context.Context, principal rbac.Principal, so
 
 // ObserveTraces runs the traces search appropriate to the source's adapter.
 func (a *Accessor) ObserveTraces(ctx context.Context, principal rbac.Principal, sourceID, service string) (raw any, supported bool, err error) {
-	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead)
+	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "traces"})
 	if err != nil {
 		return nil, false, err
 	}
@@ -112,7 +115,7 @@ func (a *Accessor) ObserveTraces(ctx context.Context, principal rbac.Principal, 
 // ObserveAlerts lists alerts appropriate to the source's adapter, normalized
 // to []observe.Alert. supported is false for adapters with no alerts path.
 func (a *Accessor) ObserveAlerts(ctx context.Context, principal rbac.Principal, sourceID, filter string) (alerts []observe.Alert, supported bool, err error) {
-	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead)
+	adapter, err := a.observeResolve(ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "alerts"})
 	if err != nil {
 		return nil, false, err
 	}

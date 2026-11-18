@@ -316,7 +316,7 @@ func (e *Executor) ExecuteBatch(ctx context.Context, calls []ToolCallRequest) ([
 	errorCount := 0
 
 	for i, call := range calls {
-		result, err := e.Execute(ctx, call.Name, call.Args)
+		result, err := e.Execute(WithToolCallID(ctx, call.ID), call.Name, call.Args)
 		results[i] = ToolCallResult{
 			ID:     call.ID,
 			Name:   call.Name,

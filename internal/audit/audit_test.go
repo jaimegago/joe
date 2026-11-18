@@ -161,14 +161,43 @@ func TestRepositoryAPISurface_NoMutatorPackageFunctions(t *testing.T) {
 	}
 }
 
-// TestFailurePosture_FailOpenOnRead verifies the §4 split for reads:
-// a failed audit write does NOT block the read (the action proceeds).
-func TestFailurePosture_FailOpenOnRead(t *testing.T) {
+// TestFailurePosture_FailClosedOnInfraRead verifies the split as D-0169
+// amended it: a failed audit write BLOCKS an act against a managed system,
+// reads and queries included. The two verbs are taken from the rbac constants
+// rather than written as literals, so a rename there fails here.
+func TestFailurePosture_FailClosedOnInfraRead(t *testing.T) {
 	auditErr := errors.New("disk full")
 	for _, action := range []string{string(rbac.ActionRead), string(rbac.ActionQuery)} {
+		if posture := audit.PostureForAction(action); posture != audit.FailClosed {
+			t.Errorf("PostureForAction(%q) = %v; an act against a managed system is fail-closed", action, posture)
+		}
 		got := audit.FailurePosture(context.Background(), action, auditErr, "test:read", audit.PostureForAction(action))
-		if got != nil {
-			t.Errorf("FailurePosture(%q, auditErr) returned %v; reads must fail-open per §4", action, got)
+		if !errors.Is(got, auditErr) {
+			t.Errorf("FailurePosture(%q, auditErr) returned %v; an act whose audit entry cannot be written is not taken, reads included", action, got)
+		}
+	}
+}
+
+// TestFailurePosture_FailOpenOnAdminConfigRead pins what D-0169 did NOT
+// change: a read of Joe's own authorization configuration on the admin surface
+// still proceeds when its audit row cannot be written. It is the control for
+// the test above — the helper still distinguishes the two classes, so the
+// infra verbs fail closed because they were moved and not because everything
+// now does.
+func TestFailurePosture_FailOpenOnAdminConfigRead(t *testing.T) {
+	auditErr := errors.New("disk full")
+	for _, action := range []string{
+		audit.ActionAdminZoneRead,
+		audit.ActionAdminPolicyRead,
+		audit.ActionAdminComponentZoneRead,
+		audit.ActionAdminAdminRead,
+		audit.ActionAdminPrincipalRead,
+		audit.ActionAdminCredentialStatusRead,
+		audit.ActionAdminReadPromoteRead,
+		audit.ActionAdminReadPostureRead,
+	} {
+		if got := audit.FailurePosture(context.Background(), action, auditErr, "test:admin-read", audit.PostureForAction(action)); got != nil {
+			t.Errorf("FailurePosture(%q, auditErr) returned %v; admin-surface configuration reads stay fail-open", action, got)
 		}
 	}
 }

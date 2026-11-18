@@ -4,6 +4,7 @@ import (
 	"context"
 
 	gitadapter "github.com/jaimegago/joe/internal/adapters/git"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
@@ -11,7 +12,7 @@ import (
 // resolves the clone's current head; either way the result reports the commit
 // the read answered at.
 func (a *Accessor) GitReadFile(ctx context.Context, principal rbac.Principal, sourceID, path, commit string) (*gitadapter.ReadResult, error) {
-	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
+	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "files", Name: path}, "git")
 	if err != nil {
 		return nil, err
 	}
@@ -21,7 +22,7 @@ func (a *Accessor) GitReadFile(ctx context.Context, principal rbac.Principal, so
 // GitListFiles lists files under a directory in the repository, on the same
 // commit terms as GitReadFile.
 func (a *Accessor) GitListFiles(ctx context.Context, principal rbac.Principal, sourceID, dir, commit string) (*gitadapter.ListResult, error) {
-	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
+	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "files", Name: dir}, "git")
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +31,7 @@ func (a *Accessor) GitListFiles(ctx context.Context, principal rbac.Principal, s
 
 // GitLog returns up to limit recent commits.
 func (a *Accessor) GitLog(ctx context.Context, principal rbac.Principal, sourceID string, limit int) ([]gitadapter.CommitInfo, error) {
-	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
+	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "commits"}, "git")
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +40,7 @@ func (a *Accessor) GitLog(ctx context.Context, principal rbac.Principal, sourceI
 
 // GitSearch searches file contents at a pinned commit in the repository.
 func (a *Accessor) GitSearch(ctx context.Context, principal rbac.Principal, sourceID string, opts gitadapter.SearchOptions) (*gitadapter.SearchResult, error) {
-	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
+	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "query", Resource: "files"}, "git")
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func (a *Accessor) GitSearch(ctx context.Context, principal rbac.Principal, sour
 
 // GitDiff returns the diff between two refs.
 func (a *Accessor) GitDiff(ctx context.Context, principal rbac.Principal, sourceID, fromRef, toRef string) (string, error) {
-	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "git")
+	ad, err := guard[gitadapter.GitAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "diffs", Name: fromRef + ".." + toRef}, "git")
 	if err != nil {
 		return "", err
 	}

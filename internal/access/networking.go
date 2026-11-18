@@ -5,13 +5,14 @@ import (
 
 	envoyadapter "github.com/jaimegago/joe/internal/adapters/networking/envoy"
 	nginxadapter "github.com/jaimegago/joe/internal/adapters/networking/nginx"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
 // --- Nginx ---
 
 func (a *Accessor) NginxListIngresses(ctx context.Context, principal rbac.Principal, sourceID, namespace string) ([]nginxadapter.Ingress, error) {
-	ad, err := guard[nginxadapter.NginxAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "nginx")
+	ad, err := guard[nginxadapter.NginxAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", APIGroup: "networking.k8s.io", Resource: "ingresses", Namespace: namespace}, "nginx")
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +20,7 @@ func (a *Accessor) NginxListIngresses(ctx context.Context, principal rbac.Princi
 }
 
 func (a *Accessor) NginxGetStatus(ctx context.Context, principal rbac.Principal, sourceID string) (*nginxadapter.NginxStatus, error) {
-	ad, err := guard[nginxadapter.NginxAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "nginx")
+	ad, err := guard[nginxadapter.NginxAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "status"}, "nginx")
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +28,7 @@ func (a *Accessor) NginxGetStatus(ctx context.Context, principal rbac.Principal,
 }
 
 func (a *Accessor) NginxListConfigMaps(ctx context.Context, principal rbac.Principal, sourceID, namespace string) ([]nginxadapter.ConfigMapSummary, error) {
-	ad, err := guard[nginxadapter.NginxAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "nginx")
+	ad, err := guard[nginxadapter.NginxAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "configmaps", Namespace: namespace}, "nginx")
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +38,7 @@ func (a *Accessor) NginxListConfigMaps(ctx context.Context, principal rbac.Princ
 // --- Envoy ---
 
 func (a *Accessor) EnvoyClusters(ctx context.Context, principal rbac.Principal, sourceID string) ([]envoyadapter.ClusterStatus, error) {
-	ad, err := guard[envoyadapter.EnvoyAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "envoy")
+	ad, err := guard[envoyadapter.EnvoyAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "clusters"}, "envoy")
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +46,7 @@ func (a *Accessor) EnvoyClusters(ctx context.Context, principal rbac.Principal, 
 }
 
 func (a *Accessor) EnvoyConfigDump(ctx context.Context, principal rbac.Principal, sourceID, section string) (map[string]any, error) {
-	ad, err := guard[envoyadapter.EnvoyAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "envoy")
+	ad, err := guard[envoyadapter.EnvoyAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "configdump", Name: section}, "envoy")
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +54,7 @@ func (a *Accessor) EnvoyConfigDump(ctx context.Context, principal rbac.Principal
 }
 
 func (a *Accessor) EnvoyStats(ctx context.Context, principal rbac.Principal, sourceID, filter string) ([]envoyadapter.Stat, error) {
-	ad, err := guard[envoyadapter.EnvoyAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "envoy")
+	ad, err := guard[envoyadapter.EnvoyAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "list", Resource: "stats"}, "envoy")
 	if err != nil {
 		return nil, err
 	}

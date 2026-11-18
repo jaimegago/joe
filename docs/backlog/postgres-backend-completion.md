@@ -31,7 +31,14 @@ chain, and completion was deferred here.
   dual-enforcement invariant (application-level plus database-level) documented on the
   `015_audit_log` migration. On PostgreSQL this means a trigger **function** that raises an
   exception on UPDATE/DELETE plus `CREATE TRIGGER … EXECUTE FUNCTION …`. The break-tested
-  append-only property must hold identically on both drivers.
+  append-only property must hold identically on both drivers. Since D-0171 this is
+  enforced at boot and not only asked for here: `audit.VerifyAppendOnly` runs against
+  whatever store Joe opened and refuses to start on one whose `audit_log` accepts an
+  UPDATE or a DELETE, so a port that omits the enforcement fails at start-up. The probe
+  was run against PostgreSQL 15 on a hand-built table with exactly this trigger-function
+  shape (`internal/audit/postgres_test.go`, behind `JOE_TEST_POSTGRES_DSN`); a ported
+  migration set should make `TestPostgres_AStoreJoeCanMigrateIsAppendOnly` take its
+  second branch and pass.
 
 - **Driver-value validation in `internal/config/validation.go`.** There is **no** driver
   allow-list today — any string reaches `sql.Open` (only `""` → default and `pgx` do

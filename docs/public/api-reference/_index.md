@@ -278,6 +278,57 @@ where each message is:
 }
 ```
 
+### `GET /api/v1/sessions/{id}/audit-trail`
+
+Returns the session's audit trail: one entry for each act its agent loop took against a
+managed system, in the order the entries were written. `{id}` is the `session_id` a task
+response returned. The route is read-only — it accepts `GET` alone, and reading a trail
+writes nothing, so it never changes what a later read returns.
+
+Response `200`: `{ "session_id": "string", "entries": [ … ], "count": N }`. `entries` is
+always an array; a session that took no such act returns `[]`. Each entry is:
+
+```json
+{
+  "id": 4211,
+  "recorded_at": "2026-11-18T12:00:00.123456789Z",
+  "principal": "svc:ci",
+  "component_id": "k8s-prod",
+  "zone": "prod-readonly",
+  "decision": "allow",
+  "decision_reason": "policy_allow",
+  "session_id": "string",
+  "task_id": "string",
+  "tool": "k8s_get",
+  "tool_call_id": "string",
+  "operation": {
+    "verb": "get",
+    "api_group": "apps",
+    "resource": "deployments",
+    "name": "api-service",
+    "namespace": "default"
+  },
+  "reasoning": "The operator asked for a health check of api-service.",
+  "trigger": { "type": "operator_request", "ref": "task/…", "source": "session" }
+}
+```
+
+- `operation` is what was done and to what: `verb`, `resource`, and where they apply
+  `api_group`, `subresource`, `name` and `namespace`. A pod's logs read as verb `get`,
+  resource `pods`, subresource `log`.
+- `reasoning` is the reason the model stated with the tool call, verbatim. It is an empty
+  string when the model stated none; Joe writes no reason in the model's place.
+- `trigger.type` is one of `operator_request`, `alert`, `policy`, `prior_finding`.
+  `trigger.source` is `model` when the model declared the trigger with the call, and
+  `session` when it declared none and the entry records what opened the session.
+- `decision` is `allow` for an act that was taken and `deny` for one Joe refused;
+  `decision_reason` is the access decision's own tag, not the model's reason.
+- Entries are ordered by `id`, ascending.
+
+`404` if the session does not exist — an unknown session is never reported as an empty
+trail. Tool calls that reach no managed system (the graph and component-registry tools,
+and the network diagnostics) leave no entry.
+
 ### `PATCH /api/v1/sessions/{id}`
 
 Renames a session. Request body `{ "title": "string" }` (required, non-empty). Response

@@ -156,6 +156,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// was removed in B005 (§12.8); its captain/findings/runs sub-resources are
 	// re-homed under /api/v1/sessions below.
 	s.registerFindingsRoutes(mux, apiPrefix)
+	// joe-audit-trail (D-0171): a session's audit trail — the acts its agent
+	// loop took against managed systems, in write order. Read-only.
+	s.registerAuditTrailRoutes(mux, apiPrefix)
 	s.registerWarningsRoutes(mux, apiPrefix)
 	// The typed finding records a read-only Auto Joe run produces, read by the
 	// findings view (autojoe-ro-report-build). Distinct from the human findings

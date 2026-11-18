@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jaimegago/joe/internal/access"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/store"
 )
 
@@ -59,6 +60,14 @@ func writeAccessError(w http.ResponseWriter, err error) bool {
 			return true
 		}
 		writeError(w, http.StatusForbidden, errorCodeForbidden, "access denied by RBAC policy")
+		return true
+	case errors.Is(err, audit.ErrAuditWriteFailed):
+		// The accessor refused the act because its audit entry could not be
+		// written (D-0169). Nothing was read and nothing was changed; the
+		// caller can retry once the audit store is healthy, which is what 503
+		// says and a 500 would not.
+		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable,
+			"audit entry could not be written, so the request was not carried out")
 		return true
 	case errors.Is(err, access.ErrGraphUnavailable):
 		writeError(w, http.StatusServiceUnavailable, errorCodeServiceUnavailable, "graph store not available")

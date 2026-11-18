@@ -112,6 +112,12 @@ type Services struct {
 	// (bug #3). Insert-only by interface; UPDATE/DELETE are also blocked at
 	// the database via migration 015 triggers.
 	Audit audit.Repository
+	// AuditTrail is the audit log's one read surface: the act entries of one
+	// agent-loop session, in the order they were written (D-0171). Wired by
+	// cmd/joe/server.go beside Audit, over the same database. Consumer: the
+	// session audit-trail route (internal/api). It declares no write, and
+	// Audit declares no read; nil in unit-test harnesses that do not need it.
+	AuditTrail audit.TrailReader
 	// LLMUsage records one row per LLM Chat call (Stream G phase G2,
 	// migration 017). Wired by cmd/joe/server.go alongside the other
 	// store-backed repositories; nil in unit-test harnesses that don't

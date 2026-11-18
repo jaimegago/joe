@@ -8,6 +8,7 @@ import (
 	"github.com/jaimegago/joe/internal/adapters"
 	githubadapter "github.com/jaimegago/joe/internal/adapters/github"
 	gitlabadapter "github.com/jaimegago/joe/internal/adapters/gitlab"
+	"github.com/jaimegago/joe/internal/audit"
 	"github.com/jaimegago/joe/internal/rbac"
 )
 
@@ -55,7 +56,7 @@ func (a *Accessor) GitLabWebhookSecret(sourceID string) (string, error) {
 // --- GitHub ---
 
 func (a *Accessor) GitHubGetPR(ctx context.Context, principal rbac.Principal, sourceID, owner, repo string, number int) (*githubadapter.PRInfo, error) {
-	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "github")
+	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "pullrequests", Name: githubPRName(owner, repo, number)}, "github")
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +64,7 @@ func (a *Accessor) GitHubGetPR(ctx context.Context, principal rbac.Principal, so
 }
 
 func (a *Accessor) GitHubGetPRDiff(ctx context.Context, principal rbac.Principal, sourceID, owner, repo string, number int) (string, error) {
-	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "github")
+	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "pullrequests", Subresource: "diff", Name: githubPRName(owner, repo, number)}, "github")
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +72,7 @@ func (a *Accessor) GitHubGetPRDiff(ctx context.Context, principal rbac.Principal
 }
 
 func (a *Accessor) GitHubPostComment(ctx context.Context, principal rbac.Principal, sourceID, owner, repo string, number int, body string) error {
-	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, "github")
+	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, audit.Operation{Verb: "create", Resource: "pullrequests", Subresource: "comments", Name: githubPRName(owner, repo, number)}, "github")
 	if err != nil {
 		return err
 	}
@@ -79,7 +80,7 @@ func (a *Accessor) GitHubPostComment(ctx context.Context, principal rbac.Princip
 }
 
 func (a *Accessor) GitHubRequestChanges(ctx context.Context, principal rbac.Principal, sourceID, owner, repo string, number int, body string) error {
-	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, "github")
+	ad, err := guard[githubadapter.GitHubAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, audit.Operation{Verb: "create", Resource: "pullrequests", Subresource: "reviews", Name: githubPRName(owner, repo, number)}, "github")
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func (a *Accessor) GitHubRequestChanges(ctx context.Context, principal rbac.Prin
 // --- GitLab ---
 
 func (a *Accessor) GitLabGetMR(ctx context.Context, principal rbac.Principal, sourceID, projectID string, iid int) (*gitlabadapter.MRInfo, error) {
-	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "gitlab")
+	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "mergerequests", Name: gitlabMRName(projectID, iid)}, "gitlab")
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (a *Accessor) GitLabGetMR(ctx context.Context, principal rbac.Principal, so
 }
 
 func (a *Accessor) GitLabGetMRDiff(ctx context.Context, principal rbac.Principal, sourceID, projectID string, iid int) (string, error) {
-	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionRead, "gitlab")
+	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionRead, audit.Operation{Verb: "get", Resource: "mergerequests", Subresource: "diff", Name: gitlabMRName(projectID, iid)}, "gitlab")
 	if err != nil {
 		return "", err
 	}
@@ -105,7 +106,7 @@ func (a *Accessor) GitLabGetMRDiff(ctx context.Context, principal rbac.Principal
 }
 
 func (a *Accessor) GitLabPostNote(ctx context.Context, principal rbac.Principal, sourceID, projectID string, iid int, body string) error {
-	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, "gitlab")
+	ad, err := guard[gitlabadapter.GitLabAdapter](a, ctx, principal, sourceID, rbac.ActionMutate, audit.Operation{Verb: "create", Resource: "mergerequests", Subresource: "notes", Name: gitlabMRName(projectID, iid)}, "gitlab")
 	if err != nil {
 		return err
 	}
