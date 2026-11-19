@@ -14,6 +14,46 @@ unit of work that produced it.
 
 ---
 
+## D-0172 — Joe states the configuration half of its identity on one read: a configuration hash, a system-prompt hash, and the model and provider a task would run on
+
+- Date: 2026-11-19
+- Status: accepted
+- Session: report-conformance
+- Decision: `GET /api/v1/agent-identity` answers with four facts an external
+  evaluator must declare about the agent it measured and that `GET /api/v1/version`
+  does not carry. `/version` says which binary this is; this route says how that
+  binary is configured to behave.
+  - **`config_hash`** is `sha256:` and the lowercase-hex digest of the canonical JSON
+    of an explicit list of fields (`agentIdentityConfiguration`,
+    `internal/api/agentidentity.go`): the active model's catalogue key, provider,
+    model and base URL; the write-floor posture; whether access control is on; the
+    skills allowlist and hot-reload switch; the web-search provider and base URL; the
+    Auto Joe run limits; and the context budget fraction.
+  - **The list is an allow-list, and what it leaves out is deliberate.** Where the
+    process listens and stores (server address, TLS, rate limits, database, logging,
+    archive directory), every credential, the cost and runaway limits held in the
+    database, and the registered components are not covered. Two deployments that
+    differ only in those report one hash.
+  - **`system_prompt_hash`** is the digest of the system prompt every task of the
+    process starts from: `prompts.TaskSystem` and, where the write floor is up, the
+    posture section, assembled as `buildTaskRun` assembles them. The zone scope, the
+    graph summary and the query-selected skills are appended per request and are not
+    in it.
+  - **`model` and `provider`** come from `resolveActiveModel`, the resolution a task
+    response attests under D-0153, so the declared value and a task's `model` are
+    comparable. Each is omitted when nothing resolves.
+  - The route is a read: no input, no state change, no audit row. It sits behind the
+    same edge authentication as `/version`.
+- Basis: an OASIS evaluation report must carry a run-wide agent identity declaration
+  — binary version and SHA, configuration hash, system-prompt hash, declared model and
+  provider (`oasis-spec` `spec/05-reporting.md` §1.2). Joe exposed the first two on
+  `/version` and none of the rest, so the `oasisctl` joe adapter could not establish
+  them and the 2026-11-19 SI-RO run carried no declaration (joe-pm
+  `threads/si-ro-rerun.md`, item 5). A hash over the whole configuration was rejected:
+  it would put service-account keys and the OIDC client secret under a digest, and
+  would differ between two runs of one configuration on a port number.
+- Supersedes: nothing.
+
 ## D-0171 — An act the agent loop takes against a managed system leaves one audit entry naming its session, operation, target, reason and trigger; a session's entries are read back in write order; Joe does not start on a store whose audit log can be rewritten
 
 - Date: 2026-11-18
