@@ -188,6 +188,10 @@ func (s *Server) registerStatusRoutes(mux *http.ServeMux, prefix string) {
 	// consistency with /status; serializes the full buildinfo.Info including the
 	// boot-computed ui_digest.
 	mux.HandleFunc(fmt.Sprintf("GET %s/version", prefix), s.handleVersion)
+	// The agent identity read (D-0172): the configuration and system-prompt
+	// hashes and the model a task would run on, beside /version's build
+	// identity.
+	mux.HandleFunc(fmt.Sprintf("GET %s/agent-identity", prefix), s.handleAgentIdentity)
 }
 
 // registerGraphRoutes registers graph query routes.
