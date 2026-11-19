@@ -139,10 +139,6 @@ test(s)** · **binding note** (where applicable).
   `TestVerifyAppendOnly_RefusesAStoreThatAcceptsEither`.
 - **Binding note.** The copy states the SQLite-trigger caveat explicitly; if the audit store
   moves off SQLite the immutability guarantee's basis (and its copy) changes.
-- **Open revision (2026-11-18, D-0169).** The mechanism changed and the published copy has
-  not: the joeagent.dev safety page still says reads take the opposite posture and that an
-  audit failure does not block observation. Since D-0169 it does. The copy is stale until
-  that page is revised; this entry describes the mechanism as it now is.
 
 ### The incident gate is deny-only, adds captain semantics, and has a single shared implementation
 
