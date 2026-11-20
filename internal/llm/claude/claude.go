@@ -222,6 +222,9 @@ func (c *Client) convertResponse(response *anthropic.Message) *llm.ChatResponse 
 	cacheRead := int(response.Usage.CacheReadInputTokens)
 	cacheWrite := int(response.Usage.CacheCreationInputTokens)
 	result := &llm.ChatResponse{
+		// The Messages API names the model that handled the request on every
+		// response. It is not c.model: see llm.ChatResponse.StatedModel.
+		StatedModel: string(response.Model),
 		Usage: llm.TokenUsage{
 			InputTokens:  int(response.Usage.InputTokens),
 			OutputTokens: int(response.Usage.OutputTokens),

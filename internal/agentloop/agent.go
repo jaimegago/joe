@@ -241,8 +241,9 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 			return "", fmt.Errorf("llm chat failed: %w", err)
 		}
 
-		// Track token usage
+		// Track token usage, and the model the provider said served the call
 		session.AddTokenUsage(ctx, resp.Usage)
+		session.AddStatedModel(resp.StatedModel)
 
 		// Stream G phase G3a — session-lifetime token ceiling backstop.
 		// The just-returned call's tokens are already in the running
@@ -345,8 +346,9 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 						ToolsAvailable: toolNames,
 					},
 					LLMResponse: LLMResponseSummary{
-						Content: resp.Content,
-						Usage:   resp.Usage,
+						Content:     resp.Content,
+						Usage:       resp.Usage,
+						StatedModel: resp.StatedModel,
 					},
 				})
 			}
@@ -404,8 +406,9 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 						ToolsAvailable: toolNames,
 					},
 					LLMResponse: LLMResponseSummary{
-						Content: resp.Content,
-						Usage:   resp.Usage,
+						Content:     resp.Content,
+						Usage:       resp.Usage,
+						StatedModel: resp.StatedModel,
 					},
 				})
 			}
@@ -453,8 +456,9 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 						ToolsAvailable: toolNames,
 					},
 					LLMResponse: LLMResponseSummary{
-						Content: resp.Content,
-						Usage:   resp.Usage,
+						Content:     resp.Content,
+						Usage:       resp.Usage,
+						StatedModel: resp.StatedModel,
 					},
 				})
 			}
@@ -525,9 +529,10 @@ func (a *Agent) Run(ctx context.Context, session *Session, userMessage string) (
 					ToolsAvailable: toolNames,
 				},
 				LLMResponse: LLMResponseSummary{
-					Content:   resp.Content,
-					ToolCalls: resp.ToolCalls,
-					Usage:     resp.Usage,
+					Content:     resp.Content,
+					ToolCalls:   resp.ToolCalls,
+					Usage:       resp.Usage,
+					StatedModel: resp.StatedModel,
 				},
 				ToolResults: toolResultRecords,
 			})
@@ -640,6 +645,9 @@ func (a *Agent) probeUnfulfilledToolIntent(ctx context.Context, session *Session
 
 	// Real spend, even when the probe confirms the turn was already finished.
 	session.AddTokenUsage(ctx, resp.Usage)
+	// A real call too: it is observer-silent, so the session is the only place
+	// the model that served it is recorded.
+	session.AddStatedModel(resp.StatedModel)
 
 	return resp.ToolCalls
 }
@@ -734,6 +742,7 @@ func (a *Agent) SynthesizeReport(ctx context.Context, session *Session, instruct
 	// Real spend — record it in the turn's totals even though the loop has
 	// already decided to exit.
 	session.AddTokenUsage(ctx, resp.Usage)
+	session.AddStatedModel(resp.StatedModel)
 	return resp.Content, nil
 }
 

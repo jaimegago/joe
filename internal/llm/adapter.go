@@ -109,6 +109,20 @@ type ChatResponse struct {
 	Content   string
 	ToolCalls []ToolCall
 	Usage     TokenUsage
+	// StatedModel is the model the PROVIDER named on this response as the one
+	// that generated it, carried verbatim, and "" when the response named none.
+	//
+	// It is the provider's statement and nothing else. An adapter never fills
+	// it from the model it was configured to ask for: the two are different
+	// facts, and the point of carrying this one is that a provider can serve a
+	// request for one model id from another. A value here that merely repeated
+	// the request would hide exactly that.
+	//
+	// Verbatim means no normalisation: a provider may state the id in another
+	// form than the one requested (a dated or suffixed build behind an alias),
+	// and whether two forms name one model is a judgement for whoever compares
+	// them, not for the seam.
+	StatedModel string
 }
 
 // Message represents a message in the conversation

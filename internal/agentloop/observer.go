@@ -28,6 +28,9 @@ type LLMResponseSummary struct {
 	Content   string
 	ToolCalls []llm.ToolCall
 	Usage     llm.TokenUsage
+	// StatedModel is the model the provider named on this response, "" when
+	// it named none (llm.ChatResponse.StatedModel).
+	StatedModel string
 }
 
 // ToolResultRecord captures the result of executing a single tool call.

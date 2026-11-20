@@ -183,12 +183,13 @@ type taskResponse struct {
 	// catalogue key (llm.available.<key>.model / .provider) as resolved at TASK
 	// PREPARATION (buildTaskRun).
 	//
-	// Two things this field does NOT claim. It is not a per-call attestation:
-	// the provider layer reports no model on a response (llm.ChatResponse
-	// carries none), so an admin model swap landing mid-turn is served by the
-	// new adapter on subsequent steps while this field still reports the model
-	// resolved at preparation — a documented, unobservable exception. And when
-	// the active key has no entry in llm.available (an unconfigured or
+	// Two things this field does NOT claim. It is not what the provider said
+	// served the turn: it is the model joe was configured to ASK for, and a
+	// provider can serve a request for one id from another. What the provider
+	// said is StatedModels, below. Nor is it a per-call record: an admin model
+	// swap landing mid-turn is served by the new adapter on subsequent steps
+	// while this field still reports the model resolved at preparation. And
+	// when the active key has no entry in llm.available (an unconfigured or
 	// mid-edit catalogue), Model falls back to the raw key and Provider is
 	// absent — the value is then a joe-local name, not a provider identifier.
 	//
@@ -197,6 +198,25 @@ type taskResponse struct {
 	// a real value without an empty string standing in for one.
 	Model    string `json:"model,omitempty"`
 	Provider string `json:"provider,omitempty"`
+	// StatedModels is what the PROVIDER said served this turn (D-0173): the
+	// distinct models named on the responses to the turn's LLM calls, verbatim,
+	// in the order each was first named. Every call of the turn is counted,
+	// including the ones that surface as no step (the no-tool-call probe, the
+	// forced synthesis at the iteration cap). Each step's own value is its
+	// llm_response.stated_model.
+	//
+	// It is never the configured model repeated: a response that named no
+	// model contributes nothing. The values are not normalised, so one may
+	// differ from Model in form alone (a dated or suffixed build behind an
+	// alias) — whether two forms name one model is the reader's judgement.
+	//
+	// Serialized without omitempty and always as a list: `[]` says no response
+	// of this turn named a model, which an absent field (an older joe) does not.
+	StatedModels []string `json:"stated_models"`
+	// StatedModelsComplete is true when the turn made at least one LLM call and
+	// every call's response named a model. Only then does StatedModels account
+	// for every call; false means some call is not represented in the list.
+	StatedModelsComplete bool `json:"stated_models_complete"`
 }
 
 type taskStep struct {
@@ -215,6 +235,10 @@ type taskLLMResponse struct {
 	Content   string         `json:"content"`
 	ToolCalls []taskToolCall `json:"tool_calls,omitempty"`
 	Usage     taskTokenUsage `json:"usage"`
+	// StatedModel is the model the provider named on this step's response as
+	// the one that generated it, verbatim (D-0173). Absent when the response
+	// named none — never the configured model standing in for it.
+	StatedModel string `json:"stated_model,omitempty"`
 }
 
 type taskToolCall struct {
@@ -870,7 +894,8 @@ func taskStepFromRecord(s agentloop.StepRecord) taskStep {
 			ToolsAvailable: s.LLMRequest.ToolsAvailable,
 		},
 		LLMResponse: taskLLMResponse{
-			Content: s.LLMResponse.Content,
+			Content:     s.LLMResponse.Content,
+			StatedModel: s.LLMResponse.StatedModel,
 			Usage: taskTokenUsage{
 				InputTokens:      s.LLMResponse.Usage.InputTokens,
 				OutputTokens:     s.LLMResponse.Usage.OutputTokens,
@@ -974,6 +999,8 @@ func finalizeTaskResponse(taskID, sessionID, status, errMsg, answer string, step
 		ErrorCode:              firstWriteFailureCode(outSteps),
 		Model:                  model,
 		Provider:               provider,
+		StatedModels:           session.StatedModels(),
+		StatedModelsComplete:   session.StatedModelsComplete(),
 	}
 }
 

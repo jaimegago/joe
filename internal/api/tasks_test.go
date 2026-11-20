@@ -230,6 +230,27 @@ func (s *taskStubLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatRespo
 	}, nil
 }
 
+// taskStatedLLM answers every call with a canned text and names, on the n-th
+// call, the n-th entry of stated as the model that served it ("" names none).
+// Calls past the end of stated repeat its last entry.
+type taskStatedLLM struct {
+	stated []string
+	calls  int
+}
+
+func (s *taskStatedLLM) Chat(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	i := s.calls
+	if i >= len(s.stated) {
+		i = len(s.stated) - 1
+	}
+	s.calls++
+	return &llm.ChatResponse{
+		Content:     "ok",
+		Usage:       llm.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+		StatedModel: s.stated[i],
+	}, nil
+}
+
 // taskToolLLM returns a tool call on the first call, then a final answer.
 type taskToolLLM struct {
 	callCount int
@@ -405,6 +426,88 @@ func TestTaskEndpoint_TokenUsage(t *testing.T) {
 	if resp.TotalTokens.OutputTokens == 0 {
 		t.Error("total_tokens.output_tokens should be > 0")
 	}
+}
+
+// TestTaskEndpoint_StatedModels asserts the turn reports what the PROVIDER said
+// served it, beside the model joe was configured to ask for and never in its
+// place (D-0173). The configured id and the stated one differ in every case, so
+// a value that merely repeated the configuration could not pass.
+//
+// A text reply with no tool calls is two LLM calls: the answer, which is the
+// turn's one step, and the no-tool-call probe, which surfaces as no step. The
+// probe's statement must reach the turn's list all the same.
+func TestTaskEndpoint_StatedModels(t *testing.T) {
+	const configured = "claude-sonnet-4-20250514"
+	run := func(t *testing.T, stated ...string) (taskResponse, string) {
+		t.Helper()
+		srv, mux := setupTaskServer(t, &taskStatedLLM{stated: stated})
+		srv.services.Config.LLM = config.LLMConfig{
+			Current: "sonnet",
+			Available: map[string]config.ModelConfig{
+				"sonnet": {Provider: "claude", Model: configured},
+			},
+		}
+		w := doRequest(mux, "POST", "/api/v1/tasks", map[string]any{"message": "hi"})
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		raw := w.Body.String()
+		var resp taskResponse
+		if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp.Model != configured {
+			t.Errorf("model = %q, want the configured id %q unchanged", resp.Model, configured)
+		}
+		return resp, raw
+	}
+
+	t.Run("every call names one model", func(t *testing.T) {
+		resp, _ := run(t, "served-model-001")
+		if len(resp.StatedModels) != 1 || resp.StatedModels[0] != "served-model-001" {
+			t.Errorf("stated_models = %v, want [served-model-001]", resp.StatedModels)
+		}
+		if !resp.StatedModelsComplete {
+			t.Error("stated_models_complete = false, want true: every call named a model")
+		}
+		if len(resp.Steps) != 1 || resp.Steps[0].LLMResponse.StatedModel != "served-model-001" {
+			t.Errorf("steps = %+v, want one step whose llm_response.stated_model is served-model-001", resp.Steps)
+		}
+	})
+
+	t.Run("a call that surfaces as no step is still counted", func(t *testing.T) {
+		// The answer names one model; the probe that follows names another.
+		resp, _ := run(t, "served-model-001", "served-model-002")
+		if len(resp.StatedModels) != 2 || resp.StatedModels[0] != "served-model-001" || resp.StatedModels[1] != "served-model-002" {
+			t.Errorf("stated_models = %v, want [served-model-001 served-model-002] in first-named order", resp.StatedModels)
+		}
+		if !resp.StatedModelsComplete {
+			t.Error("stated_models_complete = false, want true")
+		}
+	})
+
+	t.Run("a call naming no model makes the list incomplete", func(t *testing.T) {
+		resp, _ := run(t, "served-model-001", "")
+		if len(resp.StatedModels) != 1 || resp.StatedModels[0] != "served-model-001" {
+			t.Errorf("stated_models = %v, want [served-model-001]", resp.StatedModels)
+		}
+		if resp.StatedModelsComplete {
+			t.Error("stated_models_complete = true, want false: one call named no model")
+		}
+	})
+
+	t.Run("no call names a model: an empty list, never the configured id", func(t *testing.T) {
+		_, raw := run(t, "")
+		if !strings.Contains(raw, `"stated_models":[]`) {
+			t.Errorf("want \"stated_models\":[] on the wire, got: %s", raw)
+		}
+		if !strings.Contains(raw, `"stated_models_complete":false`) {
+			t.Errorf("want \"stated_models_complete\":false on the wire, got: %s", raw)
+		}
+		if strings.Contains(raw, `"stated_model":`) {
+			t.Errorf("a step carried stated_model though its response named none: %s", raw)
+		}
+	})
 }
 
 // TestTaskEndpoint_ObservedModel asserts the turn attests WHICH model served it

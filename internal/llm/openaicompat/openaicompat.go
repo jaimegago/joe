@@ -117,6 +117,9 @@ type chatRequest struct {
 }
 
 type chatResponse struct {
+	// Model is the model the server says generated the completion. The Chat
+	// Completions shape carries it; a server that omits it decodes to "".
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content   string         `json:"content"`
@@ -205,6 +208,8 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	}
 
 	result := &llm.ChatResponse{
+		// The server's statement, not c.model: see llm.ChatResponse.StatedModel.
+		StatedModel: parsed.Model,
 		Usage: llm.TokenUsage{
 			InputTokens:  parsed.Usage.PromptTokens,
 			OutputTokens: parsed.Usage.CompletionTokens,

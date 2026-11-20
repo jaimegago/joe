@@ -34,6 +34,14 @@ type Session struct {
 	cacheWriteTokens int
 	cacheWriteCalls  int
 
+	// What the provider said served the session's LLM calls: the distinct
+	// models it named, in the order each was first named, and how many calls
+	// named one. Counted against llmCalls for the same reason the cache
+	// counts are — a list drawn from some calls would read as the turn's
+	// while silently missing the rest. See llm.ChatResponse.StatedModel.
+	statedModels     []string
+	statedModelCalls int
+
 	// MaxMessages limits conversation history size to prevent unbounded growth
 	// When 0, no limit is applied. Recommended: 100-200 for typical conversations.
 	// Applied as a SECONDARY backstop after the token budget (a cheap guard
@@ -419,6 +427,39 @@ func (s *Session) CacheReadTokens() *int {
 // no LLM call was made or any call did not report the count.
 func (s *Session) CacheWriteTokens() *int {
 	return completeCount(s.cacheWriteTokens, s.cacheWriteCalls, s.llmCalls)
+}
+
+// AddStatedModel records the model the provider named on one LLM response.
+// It is called once per call, beside AddTokenUsage, with "" when the response
+// named none: that call then counts against StatedModelsComplete and adds
+// nothing to StatedModels.
+func (s *Session) AddStatedModel(model string) {
+	if model == "" {
+		return
+	}
+	s.statedModelCalls++
+	for _, seen := range s.statedModels {
+		if seen == model {
+			return
+		}
+	}
+	s.statedModels = append(s.statedModels, model)
+}
+
+// StatedModels returns the distinct models the provider named across the
+// session's LLM calls, verbatim, in the order each was first named. It is
+// never nil: a session whose calls named no model returns an empty list.
+func (s *Session) StatedModels() []string {
+	out := make([]string, len(s.statedModels))
+	copy(out, s.statedModels)
+	return out
+}
+
+// StatedModelsComplete reports whether every LLM call of the session named a
+// model — false when no call was made or any call named none. Only when it is
+// true does StatedModels account for every call.
+func (s *Session) StatedModelsComplete() bool {
+	return s.llmCalls > 0 && s.statedModelCalls == s.llmCalls
 }
 
 func completeCount(total, reported, calls int) *int {

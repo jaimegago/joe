@@ -259,3 +259,42 @@ func assertCount(t *testing.T, name string, got, want *int) {
 		t.Errorf("%s = %d, want %d", name, *got, *want)
 	}
 }
+
+// The stated models are the distinct values the provider named, in first-named
+// order, and the list is complete only when every LLM call named one (D-0173).
+// A call that named none adds nothing and makes the list incomplete — it is
+// never filled in.
+func TestSessionStatedModels(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name         string
+		stated       []string // one entry per LLM call; "" is a call that named none
+		want         []string
+		wantComplete bool
+	}{
+		{name: "no calls", stated: nil, want: []string{}},
+		{name: "every call names the same model", stated: []string{"m-1", "m-1", "m-1"}, want: []string{"m-1"}, wantComplete: true},
+		{name: "calls name two models, first-named order", stated: []string{"m-2", "m-1", "m-2"}, want: []string{"m-2", "m-1"}, wantComplete: true},
+		{name: "no call names a model", stated: []string{"", ""}, want: []string{}},
+		{name: "one call names none", stated: []string{"m-1", ""}, want: []string{"m-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSession(nil)
+			for _, m := range tt.stated {
+				s.AddTokenUsage(ctx, llm.TokenUsage{})
+				s.AddStatedModel(m)
+			}
+			got := s.StatedModels()
+			if got == nil {
+				t.Fatal("StatedModels() = nil, want a non-nil list")
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("StatedModels() = %v, want %v", got, tt.want)
+			}
+			if s.StatedModelsComplete() != tt.wantComplete {
+				t.Errorf("StatedModelsComplete() = %v, want %v", s.StatedModelsComplete(), tt.wantComplete)
+			}
+		})
+	}
+}
