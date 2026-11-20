@@ -127,6 +127,7 @@ after the move rather than by inspection.
 | [`skills-governance-hardening`](skills-governance-hardening.md) | Skills governance hardening — admin-gate the HTTP surface, audit lifecycle events, load-time integrity | open | next |
 | [`structural-guard-vacuity`](structural-guard-vacuity.md) | Structural AST guards walk only a handler's direct body — one is already vacuous | open | next |
 | [`synthesis-marker-only-answer`](synthesis-marker-only-answer.md) | The forced-synthesis path can return an empty `answer`: success is judged before the markers are stripped | open | |
+| [`thinking-tokens-unrecorded`](thinking-tokens-unrecorded.md) | Thinking tokens are in neither count Joe records or prices | open | next |
 | [`tool-class-break-tests`](tool-class-break-tests.md) | Break-tests pinning tool action-class — 58 Read rows are unpinned | open | next |
 | [`trim-deadonarrival-component-types`](trim-deadonarrival-component-types.md) | Unregistrable component types — deferred wiring, a Test-control UX bug, and a latent read-promotion residue | open | later |
 | [`turn-code-first-wins-masking`](turn-code-first-wins-masking.md) | Turn-level error_code is first-wins, so an early scope refusal hides a later write denial | open | later |
