@@ -27,6 +27,13 @@ import (
 // answered with a non-2xx, and reported as a test failure when the harness
 // stops. Never a hang, never an empty 200.
 
+// ResponderStatedModel is the model the responder names on every completion as
+// the one that generated it. It is deliberately NOT the id joe is configured to
+// ask the responder for ("e2e-responder", in the harness config): a test that
+// reads it off a task response is then reading what the responder said, and
+// could not pass on the configured id repeated back.
+const ResponderStatedModel = "e2e-responder-served-001"
+
 // ChatRequest is the part of joe's chat/completions request a script reads.
 type ChatRequest struct {
 	Model    string        `json:"model"`
@@ -321,7 +328,7 @@ func encodeReply(call int, reply Reply) ([]byte, error) {
 	}
 	resp := map[string]any{
 		"id":    fmt.Sprintf("e2e-%d", call),
-		"model": "e2e-responder",
+		"model": ResponderStatedModel,
 		"choices": []map[string]any{{
 			"index": 0,
 			"message": map[string]any{

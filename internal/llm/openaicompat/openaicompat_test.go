@@ -293,3 +293,46 @@ func TestChat_ContentAlwaysEmitted(t *testing.T) {
 		}
 	}
 }
+
+// The stated model is the completion's own `model`, verbatim, and never the
+// model the client was configured to ask for (D-0173). A server that omits the
+// field yields "", not the configured id.
+func TestChat_StatedModel(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "the server names another model than the one requested",
+			body: `{"model":"some-other-model-001","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`,
+			want: "some-other-model-001",
+		},
+		{
+			name: "the server names no model",
+			body: `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			// newTestClient asks for "test-model".
+			c := newTestClient(t, srv.URL+"/v1")
+			resp, err := c.Chat(context.Background(), llm.ChatRequest{Messages: []llm.Message{{Role: "user", Content: "go"}}})
+			if err != nil {
+				t.Fatalf("Chat: %v", err)
+			}
+			if resp.StatedModel != tt.want {
+				t.Errorf("StatedModel = %q, want %q", resp.StatedModel, tt.want)
+			}
+		})
+	}
+}

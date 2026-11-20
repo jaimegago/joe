@@ -393,6 +393,8 @@ Runs the task to completion and returns the full result synchronously. Response 
   "duration_ms": 1234,
   "model": "string",
   "provider": "string",
+  "stated_models": ["string"],
+  "stated_models_complete": true,
   "error": "string",
   "error_code": "string"
 }
@@ -444,18 +446,37 @@ active model, and both describe the model **resolved at task preparation**. That
 makes them usable by an external evaluation harness recording which model a result was
 produced against.
 
-Two limits on that claim:
+Three limits on that claim:
 
-- It is **not a per-call attestation.** No provider reports the serving model on a
-  response, so an operator switching models while a task is in flight is a documented,
-  unobservable exception: later steps run on the new model while these fields still report
-  the model resolved when the task began.
+- It is **the model Joe asked for, not the model the provider says answered.** A provider
+  can serve a request for one identifier from another model. What the provider said is
+  `stated_models`, below.
+- It is **not a per-call record.** An operator switching models while a task is in flight
+  leaves these fields reporting the model resolved when the task began, while later steps
+  run on the new one.
 - If the active model has **no configured entry**, `model` falls back to the raw
   configuration key and `provider` is omitted — the value is then a Joe-local name rather
   than a provider identifier.
 
 Both fields are omitted entirely when no model could be resolved, so an absent field is
 never confused with an empty one.
+
+`stated_models` is **what the provider said served the task**: the distinct models named
+on the responses to the task's LLM calls, in the order each was first named. Each value is
+the provider's own text, carried verbatim — the model version on a Gemini response, the
+`model` of an Anthropic message or of an OpenAI-compatible completion. Joe never fills it
+from its configuration: a response that names no model contributes nothing, and a task
+whose responses named none reports `[]`.
+
+- The values are **not normalised**. A provider may name a model in another form than the
+  one requested, such as a dated build behind an alias, so a value that differs from
+  `model` is a difference in text. Whether the two name one model is the reader's
+  judgement.
+- `stated_models_complete` is `true` when the task made at least one LLM call and every
+  call's response named a model. When it is `false`, some call is not represented in the
+  list.
+- Every LLM call of the task is counted, including calls that appear as no step. A step's
+  own value is `llm_response.stated_model`, omitted when that response named none.
 
 ### `POST /api/v1/tasks/stream`
 

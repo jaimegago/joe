@@ -249,11 +249,19 @@ type TaskResponse struct {
 		OutputTokens int `json:"output_tokens"`
 	} `json:"total_tokens"`
 	Steps []struct {
+		LLMResponse struct {
+			StatedModel string `json:"stated_model"`
+		} `json:"llm_response"`
 		ToolResults []struct {
 			Name  string `json:"name"`
 			Error string `json:"error"`
 		} `json:"tool_results"`
 	} `json:"steps"`
+	// Model is the id joe is configured to ask for; StatedModels is what the
+	// provider said served the turn's calls (joe D-0173).
+	Model                string   `json:"model"`
+	StatedModels         []string `json:"stated_models"`
+	StatedModelsComplete bool     `json:"stated_models_complete"`
 }
 
 // RunTask posts one message to POST /api/v1/tasks and decodes the turn.

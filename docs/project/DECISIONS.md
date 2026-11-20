@@ -14,6 +14,54 @@ unit of work that produced it.
 
 ---
 
+## D-0173 — A model response carries the model the provider stated, and a task reports the distinct stated values beside the model Joe asked for; nothing is filled in from configuration
+
+- Date: 2026-11-20
+- Status: accepted
+- Session: provider-stated-model
+- Decision: Joe records what a provider says about which model generated a response, and
+  reports it on the task response beside `model`, whose meaning does not change.
+  - **`llm.ChatResponse.StatedModel`** is the model the provider named on the response,
+    verbatim, and `""` when it named none. Each adapter reads its provider's own field:
+    `ModelVersion` on a Gemini `GenerateContentResponse`, `Model` on an Anthropic
+    `Message`, `model` on an OpenAI-compatible completion.
+  - **An adapter never fills it from the model it was configured to ask for.** The two
+    are different facts. A provider can serve a request for one identifier from another
+    model, and a value that repeated the request would hide exactly that.
+  - **Verbatim means not normalised.** A provider may state a model in another form than
+    the one requested. Whether two forms name one model is decided by whoever compares
+    them, with the provider's text in hand.
+  - **Per step:** `agentloop.StepRecord` carries it, and a task step reports it as
+    `llm_response.stated_model`, omitted when the response named none.
+  - **Per task:** `stated_models` is the distinct stated values across the task's LLM
+    calls, in the order each was first named, serialized always and as a list (`[]`
+    when no response named a model). `stated_models_complete` is `true` when the task
+    made at least one LLM call and every call's response named a model. The session
+    counts every call, including the two that surface as no step (the no-tool-call
+    probe and the forced synthesis at the iteration cap), on the pattern the cache
+    counts already use: a list drawn from some calls would read as the task's.
+  - **`model` and `provider` keep their D-0153 meaning**: the configured entry for the
+    active model, resolved at task preparation. `GET /api/v1/agent-identity` is
+    unchanged, and so is `llm_usage.model`, which stays the requested identifier the
+    price lookup keys on. No migration.
+- Basis: the "observed model" an OASIS evaluation records for each scenario was read
+  from `model`, which is the configured identifier, and the declared model is read from
+  the same resolution, so the comparison between the two could catch a model switch
+  inside Joe and no rerouting by a provider (joe-pm `threads/observed-model-source.md`).
+  `oasis-spec` Reporting §1.2 has the observed model be the provider's own statement or
+  not available. The pinned SDKs carry the statement
+  (`google.golang.org/genai` `GenerateContentResponse.ModelVersion`,
+  `anthropic-sdk-go` `Message.Model`), and the OpenAI Chat Completions shape carries
+  `model`; Joe decoded none of them. Changing the meaning of `model` was rejected: the
+  declared model is derived the same way, and what the stated value reads on a live
+  response had not been measured when this was decided, so a consumer comparing by
+  string equality could not yet be told what to expect.
+- Supersedes: amends D-0153 property (b). Its premise that no model identifier is
+  observable in the provider layer is no longer true: `llm.ChatResponse` and
+  `agentloop.StepRecord` each carry one. `model` remains a preparation-time value; a
+  model switch landing mid-task now shows in the steps' stated models where the
+  provider names one.
+
 ## D-0172 — Joe states the configuration half of its identity on one read: a configuration hash, a system-prompt hash, and the model and provider a task would run on
 
 - Date: 2026-11-19

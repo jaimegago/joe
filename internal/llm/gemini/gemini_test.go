@@ -1231,3 +1231,25 @@ func TestConvertResponse_CacheCounts(t *testing.T) {
 		}
 	}
 }
+
+// The stated model is the response's own modelVersion, verbatim, and never the
+// model the client was configured to ask for: a provider can serve a request
+// for one id from another, and a value that repeated the request would hide it
+// (D-0173). A response naming no version yields "", not the configured id.
+func TestConvertResponse_StatedModel(t *testing.T) {
+	os.Setenv("GEMINI_API_KEY", "test-gemini-api-key-1234567890")
+	defer os.Unsetenv("GEMINI_API_KEY")
+
+	client, _ := NewClient(context.Background(), "gemini-2.5-flash")
+	defer client.Close()
+
+	stated := client.convertResponse(&genai.GenerateContentResponse{ModelVersion: "some-other-model-001"})
+	if stated.StatedModel != "some-other-model-001" {
+		t.Errorf("StatedModel = %q, want the response's modelVersion %q", stated.StatedModel, "some-other-model-001")
+	}
+
+	unstated := client.convertResponse(&genai.GenerateContentResponse{})
+	if unstated.StatedModel != "" {
+		t.Errorf("StatedModel = %q, want empty for a response naming no model version", unstated.StatedModel)
+	}
+}

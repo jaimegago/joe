@@ -304,7 +304,10 @@ func (c *Client) convertToolDefinition(tool llm.ToolDefinition) (*genai.Tool, er
 
 // convertResponse converts Gemini response to our response format
 func (c *Client) convertResponse(resp *genai.GenerateContentResponse) *llm.ChatResponse {
-	result := &llm.ChatResponse{}
+	// ModelVersion is the Gemini API's own statement of the model version that
+	// generated the response, "" when the response carried none. It is not
+	// c.model: see llm.ChatResponse.StatedModel.
+	result := &llm.ChatResponse{StatedModel: resp.ModelVersion}
 
 	// Safely extract token usage - UsageMetadata can be nil
 	if resp.UsageMetadata != nil {

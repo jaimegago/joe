@@ -599,3 +599,27 @@ func TestConvertResponse_CacheCountsReported(t *testing.T) {
 		t.Errorf("CacheWriteTokens = %v, want a reported 0", result.Usage.CacheWriteTokens)
 	}
 }
+
+// The stated model is the response's own `model`, verbatim, and never the model
+// the client was configured to ask for (D-0173): the request here names the
+// default model and the response names another.
+func TestConvertResponse_StatedModel(t *testing.T) {
+	os.Setenv("ANTHROPIC_API_KEY", "test-key")
+	defer os.Unsetenv("ANTHROPIC_API_KEY")
+
+	client, _ := NewClient("")
+
+	msgJSON := `{"id":"msg-1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"some-other-model-001","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`
+	var msg anthropic.Message
+	if err := json.Unmarshal([]byte(msgJSON), &msg); err != nil {
+		t.Fatalf("Failed to unmarshal message: %v", err)
+	}
+
+	result := client.convertResponse(&msg)
+	if result.StatedModel != "some-other-model-001" {
+		t.Errorf("StatedModel = %q, want the response's model %q", result.StatedModel, "some-other-model-001")
+	}
+	if result.StatedModel == DefaultModel {
+		t.Error("StatedModel carries the configured model; it must carry what the response named")
+	}
+}
