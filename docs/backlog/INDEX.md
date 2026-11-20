@@ -106,6 +106,7 @@ after the move rather than by inspection.
 | [`posture-endpoint-grants-signal`](posture-endpoint-grants-signal.md) | Posture endpoint: a coarse "any write grants exist" signal (full-mode only) | deferred | later |
 | [`posture-prompt-conflation`](posture-prompt-conflation.md) | Observation-posture conflation — deferred follow-ups | open | later |
 | [`pr-surface-joe-mention`](pr-surface-joe-mention.md) | PR surface: an @joe mention triggers a change-impact assessment | open | later |
+| [`price-rows-dated-changes`](price-rows-dated-changes.md) | Two price rows go stale on a date the table cannot hold | open | next |
 | [`promotion-requirements-single-source`](promotion-requirements-single-source.md) | Backlog — Drive component promotion validation from a single per-Kind requirements source | open | later |
 | [`rbac-v2`](rbac-v2.md) | Full RBAC v2 — role indirection, group subjects, and granular permissions | open | later |
 | [`read-posture-visibility`](read-posture-visibility.md) | Read posture is invisible in every UI and CLI surface | open | next |

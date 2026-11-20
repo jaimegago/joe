@@ -72,6 +72,40 @@ var builtinPrices = map[modelKey]PerTokenPrice{
 		OutputPerToken: 2.50 / 1_000_000.0,
 		SourceCurrency: "USD",
 	},
+	// Gemini 3.8 Flash — Standard paid tier.
+	// Source: https://ai.google.dev/gemini-api/docs/pricing
+	// (served from aistudio.google.com/docs/pricing)
+	// Captured: 2026-11-20. Quoted as $0.75 / MTok input, $3.75 / MTok output
+	// "through December 31, 2026".
+	//
+	// THIS ROW GOES STALE ON 2027-01-01: the same page quotes $1.50 / MTok
+	// input and $7.50 / MTok output "starting January 1, 2027". A row holds
+	// one price and no date, so the price in force on the capture date is
+	// what is recorded (docs/backlog/price-rows-dated-changes.md).
+	//
+	// The output price is quoted "including thinking tokens".
+	makeKey("gemini", "gemini-3.8-flash"): {
+		InputPerToken:  0.75 / 1_000_000.0,
+		OutputPerToken: 3.75 / 1_000_000.0,
+		SourceCurrency: "USD",
+	},
+	// Gemini 4 Carbon — Standard paid tier.
+	// Source: https://ai.google.dev/gemini-api/docs/pricing
+	// (served from aistudio.google.com/docs/pricing)
+	// Captured: 2026-11-20. Quoted as $2.00 / MTok input, $10.00 / MTok
+	// output "through November 30, 2026".
+	//
+	// THIS ROW GOES STALE ON 2026-12-01: the same page quotes $4.00 / MTok
+	// input and $20.00 / MTok output "starting December 1, 2026". A row holds
+	// one price and no date, so the price in force on the capture date is
+	// what is recorded (docs/backlog/price-rows-dated-changes.md).
+	//
+	// The output price is quoted "including thinking tokens".
+	makeKey("gemini", "gemini-4-carbon"): {
+		InputPerToken:  2.00 / 1_000_000.0,
+		OutputPerToken: 10.00 / 1_000_000.0,
+		SourceCurrency: "USD",
+	},
 }
 
 // CostTable bundles the built-in prices with a per-instance override layer

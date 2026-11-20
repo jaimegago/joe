@@ -13,6 +13,8 @@ func TestLookupCapabilities_KnownModelsReturnSeededValues(t *testing.T) {
 	}{
 		{"claude", "claude-sonnet-4-20250514", 200000, 4096},
 		{"gemini", "gemini-2.5-flash", 1048576, 4096},
+		{"gemini", "gemini-3.8-flash", 1048576, 4096},
+		{"gemini", "gemini-4-carbon", 1048576, 4096},
 		// Provider is normalised (lowercased) on lookup, mirroring the cost
 		// table; an upper-cased provider must still resolve.
 		{"Claude", "claude-sonnet-4-20250514", 200000, 4096},

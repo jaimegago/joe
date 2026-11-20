@@ -144,6 +144,48 @@ func TestNewCostTable_BuiltinGemini25Flash(t *testing.T) {
 	}
 }
 
+// TestNewCostTable_BuiltinGemini38Flash pins the row for gemini-3.8-flash
+// at the price in force when it was captured (2026-11-20): $0.75 / MTok
+// input, $3.75 / MTok output. The provider's page quotes a higher price
+// from 2027-01-01, so this literal is expected to change with the row.
+func TestNewCostTable_BuiltinGemini38Flash(t *testing.T) {
+	tbl := llmusage.NewCostTable()
+	p, ok := tbl.Lookup("gemini", "gemini-3.8-flash")
+	if !ok {
+		t.Fatalf("built-in price missing for gemini/gemini-3.8-flash")
+	}
+	if p.SourceCurrency != "USD" {
+		t.Errorf("source currency = %q, want USD", p.SourceCurrency)
+	}
+	if want := 0.75 / 1_000_000.0; p.InputPerToken != want {
+		t.Errorf("input per-token = %g, want %g", p.InputPerToken, want)
+	}
+	if want := 3.75 / 1_000_000.0; p.OutputPerToken != want {
+		t.Errorf("output per-token = %g, want %g", p.OutputPerToken, want)
+	}
+}
+
+// TestNewCostTable_BuiltinGemini4Carbon pins the row for gemini-4-carbon at
+// the price in force when it was captured (2026-11-20): $2 / MTok input,
+// $10 / MTok output. The provider's page quotes double from 2026-12-01, so
+// this literal is expected to change with the row.
+func TestNewCostTable_BuiltinGemini4Carbon(t *testing.T) {
+	tbl := llmusage.NewCostTable()
+	p, ok := tbl.Lookup("gemini", "gemini-4-carbon")
+	if !ok {
+		t.Fatalf("built-in price missing for gemini/gemini-4-carbon")
+	}
+	if p.SourceCurrency != "USD" {
+		t.Errorf("source currency = %q, want USD", p.SourceCurrency)
+	}
+	if want := 2.00 / 1_000_000.0; p.InputPerToken != want {
+		t.Errorf("input per-token = %g, want %g", p.InputPerToken, want)
+	}
+	if want := 10.00 / 1_000_000.0; p.OutputPerToken != want {
+		t.Errorf("output per-token = %g, want %g", p.OutputPerToken, want)
+	}
+}
+
 // TestCostTable_OverrideReplacesBuiltin is the operator-override path:
 // a registered override for a built-in pair must replace the built-in
 // entry on every Lookup. This is what lets an operator correct an out-
