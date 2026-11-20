@@ -58,6 +58,27 @@ var builtinCapabilities = map[modelKey]ModelCapabilities{
 		ContextWindowTokens: 1048576,
 		MaxOutputTokens:     4096,
 	},
+	// Gemini 3.8 Flash — the model page states "Input token limit" 1,048,576.
+	// Source: https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash
+	// (served from aistudio.google.com/docs/models/gemini-3.8-flash)
+	// Captured: 2026-11-20. MaxOutput held at 4096 like every other row: the
+	// page gives an output limit of 65,536, and the uniform cap is what keeps
+	// the budget arithmetic identical across models.
+	makeKey("gemini", "gemini-3.8-flash"): {
+		ContextWindowTokens: 1048576,
+		MaxOutputTokens:     4096,
+	},
+	// Gemini 4 Carbon — the model page has no "Input token limit" row. It
+	// states "Context window (unified input and output token limit)"
+	// 1,048,576, which is the total window this field holds.
+	// Source: https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon
+	// (served from aistudio.google.com/docs/models/gemini-4-carbon)
+	// Captured: 2026-11-20. MaxOutput held at 4096 like every other row; the
+	// page gives a default maximum output of 65,536.
+	makeKey("gemini", "gemini-4-carbon"): {
+		ContextWindowTokens: 1048576,
+		MaxOutputTokens:     4096,
+	},
 }
 
 // CapabilitiesTable bundles the built-in capabilities with a per-instance

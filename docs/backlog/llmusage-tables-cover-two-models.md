@@ -13,6 +13,11 @@ The agentic path reads the capabilities table's max-output and passes it through
 `llm.ChatRequest.MaxTokens`, so an unknown model is not merely unpriced — it is
 budgeted against a window that is not its own.
 
+**Two rows were added on 2026-11-20** for `gemini-3.8-flash` and
+`gemini-4-carbon`, the models the published SI-RO runs name (joe-pm
+`threads/joe-model-rows.md`). The tables now cover four models; every other
+model is still the 100,000-token unknown, and the open question below stands.
+
 ## Why it is filed now
 
 It was measured as **inert for the diagnostic-accuracy corpus and not inert in
